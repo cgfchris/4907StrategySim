@@ -159,10 +159,11 @@ def main():
                         scores[robot.alliance] += 1
                         pieces.recycle_fuel(robot, config['field'])
             
-            # Update Game Pieces & Apply Penalties
+            # Update Game Pieces
             pieces.update(robots, game_time, config['field'])
-            for alliance, amount in pieces.penalties:
-                scores[alliance] = max(0, scores[alliance] - amount)
+            # (Penalties disabled for now)
+            # for alliance, amount in pieces.penalties:
+            #     scores[alliance] = max(0, scores[alliance] - amount)
         
         # --- DRAWING ---
         screen.fill((20, 20, 20))

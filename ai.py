@@ -103,16 +103,16 @@ class RobotAI:
             # 1. Prioritize fuel in our own zone if we can score
             if can_score:
                 for fuel in pieces.fuels:
-                        if not fuel.collected and fuel.immune_timer <= 0:
-                            # Coordination: Avoid fuel being chased by teammates
-                            is_targeted = False
-                            for other in other_robots:
-                                if other != robot and other.alliance == robot.alliance:
-                                    if self.get_dist(other.x, other.y, fuel.x, fuel.y) < 20: # Someone is very close
-                                        is_targeted = True
-                                        break
-                            
-                            if is_targeted and random.random() < 0.7: continue # 70% chance to look for something else
+                    if not fuel.collected and fuel.immune_timer <= 0:
+                        # Coordination: Avoid fuel being chased by teammates
+                        is_targeted = False
+                        for other in other_robots:
+                            if other != robot and other.alliance == robot.alliance:
+                                if self.get_dist(other.x, other.y, fuel.x, fuel.y) < 20: 
+                                    is_targeted = True
+                                    break
+                        
+                        if is_targeted and random.random() < 0.7: continue
 
                         # Is it in our zone?
                         in_zone = (is_red and fuel.x < field.divider_x) or (not is_red and fuel.x > (field.width_in - field.divider_x))

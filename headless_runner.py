@@ -109,8 +109,9 @@ def run_match(config, match_id, verbose=False):
                     pieces.recycle_fuel(robot, config['field'])
         
         pieces.update(robots, game_time, config['field'])
-        for alliance, amount in pieces.penalties:
-            scores[alliance] = max(0, scores[alliance] - amount)
+        # (Penalties disabled for now)
+        # for alliance, amount in pieces.penalties:
+        #     scores[alliance] = max(0, scores[alliance] - amount)
         
         game_time += dt
         
