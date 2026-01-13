@@ -31,17 +31,27 @@ def run_match(config, match_id, verbose=False):
     field = Field(config['field'])
     pieces = GamePieceManager(config, ppi)
     
-    # Initialize robots (using same positions as main.py)
-    red_robot = Robot(100, field_height_in/2 - 50, config['red_robot'], "red")
-    blue_robot = Robot(field_width_in - 100, field_height_in/2 + 50, config['blue_robot'], "blue")
-    robots = [red_robot, blue_robot]
-    
-    # Initialize AIs
+    # Initialize robots
+    robots = []
     robot_ais = {}
-    if config['red_robot'].get('is_ai'):
-        robot_ais[red_robot] = RobotAI("red", config['red_robot']['drivetrain'] == "tank")
-    if config['blue_robot'].get('is_ai'):
-        robot_ais[blue_robot] = RobotAI("blue", config['blue_robot']['drivetrain'] == "tank")
+    
+    # Red Alliance
+    for i, r_cfg in enumerate(config['red_alliance']):
+        y_pos = (field_height_in / 4) * (i + 1)
+        robot = Robot(100, y_pos, r_cfg, "red")
+        robots.append(robot)
+        if r_cfg.get('is_ai'):
+            robot_ais[robot] = RobotAI("red", r_cfg.get('drivetrain') == "tank")
+            
+    # Blue Alliance
+    for i, b_cfg in enumerate(config['blue_alliance']):
+        y_pos = (field_height_in / 4) * (i + 1)
+        robot = Robot(field_width_in - 100, y_pos, b_cfg, "blue")
+        robots.append(robot)
+        if b_cfg.get('is_ai'):
+            robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank")
+    
+    # (AI initialization moved into the robot loops above)
         
     scores = {"red": 0, "blue": 0}
     game_time = 0
@@ -72,7 +82,7 @@ def run_match(config, match_id, verbose=False):
 
         for robot in robots:
             can_score = (active_alliance == "both") or (active_alliance == robot.alliance)
-            ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score) if robot in robot_ais else None
+            ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots) if robot in robot_ais else None
             
             if robot.update(dt, keys, dummy_ctrl, field, game_time, robots, pieces, can_score, ai_inputs):
                 if can_score:

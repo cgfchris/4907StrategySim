@@ -24,8 +24,10 @@ def main():
         config = json.load(f)
     
     ppi = config['field']['pixels_per_inch']
-    field_width = int(config['field']['width_inches'] * ppi)
-    field_height = int(config['field']['length_inches'] * ppi)
+    field_width_in = config['field']['width_inches']
+    field_height_in = config['field']['length_inches']
+    field_width = int(field_width_in * ppi)
+    field_height = int(field_height_in * ppi)
     
     hud_height = 140 
     screen = pygame.display.set_mode((field_width, field_height + hud_height))
@@ -53,17 +55,27 @@ def main():
         'shoot_key': pygame.K_SLASH, 'pass_key': pygame.K_RSHIFT
     }
     
-    # Initialize separate robot configs
-    red_robot = Robot(100, field_height/(2*ppi) - 50, config['red_robot'], "red")
-    blue_robot = Robot(config['field']['width_inches'] - 100, field_height/(2*ppi) + 50, config['blue_robot'], "blue")
-    robots = [red_robot, blue_robot]
-    
-    # AI Initialization
+    # Initialize robots
+    robots = []
     robot_ais = {}
-    if config['red_robot'].get('is_ai'):
-        robot_ais[red_robot] = RobotAI("red", config['red_robot']['drivetrain'] == "tank")
-    if config['blue_robot'].get('is_ai'):
-        robot_ais[blue_robot] = RobotAI("blue", config['blue_robot']['drivetrain'] == "tank")
+    
+    # Red Alliance
+    for i, r_cfg in enumerate(config['red_alliance']):
+        y_pos = (field_height_in / 4) * (i + 1)
+        robot = Robot(100, y_pos, r_cfg, "red")
+        robots.append(robot)
+        if r_cfg.get('is_ai'):
+            robot_ais[robot] = RobotAI("red", r_cfg.get('drivetrain') == "tank")
+            
+    # Blue Alliance
+    for i, b_cfg in enumerate(config['blue_alliance']):
+        y_pos = (field_height_in / 4) * (i + 1)
+        robot = Robot(field_width_in - 100, y_pos, b_cfg, "blue")
+        robots.append(robot)
+        if b_cfg.get('is_ai'):
+            robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank")
+    
+    # (AI initialization moved into the robot loops above)
     
     # Game State
     scores = {"red": 0, "blue": 0}
@@ -88,11 +100,7 @@ def main():
                 if event.key == pygame.K_r: return main()
                 if event.key == pygame.K_t: paused = not paused
                 
-                # Independent Toggles
-                if event.key == red_ctrl['shoot_key']: red_robot.auto_shoot_enabled = not red_robot.auto_shoot_enabled
-                if event.key == red_ctrl['pass_key']: red_robot.auto_pass_enabled = not red_robot.auto_pass_enabled
-                if event.key == blue_ctrl['shoot_key']: blue_robot.auto_shoot_enabled = not blue_robot.auto_shoot_enabled
-                if event.key == blue_ctrl['pass_key']: blue_robot.auto_pass_enabled = not blue_robot.auto_pass_enabled
+                # (Auto-shoot/pass toggles for individual robots disabled for now)
                 
                 # Tuning Controls
                 if event.key == pygame.K_LEFTBRACKET: target_idx = (target_idx - 1) % len(tuning_targets)
@@ -121,14 +129,15 @@ def main():
             
             # Update Robots
             for robot in robots:
-                ctrl = red_ctrl if robot.alliance == "red" else blue_ctrl
+                # ctrl = red_ctrl if robot.alliance == "red" else blue_ctrl # Not used directly in robot.update anymore
                 can_score = (active_alliance == "both") or (active_alliance == robot.alliance)
                 
                 ai_inputs = None
                 if robot in robot_ais:
-                    ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score)
+                    ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots)
                 
-                if robot.update(dt, keys, ctrl, field, game_time, robots, pieces, can_score, ai_inputs):
+                # In 3v3 mode, all are currently AI, so dummy_ctrl is enough for now
+                if robot.update(dt, keys, {}, field, game_time, robots, pieces, can_score, ai_inputs):
                     if can_score:
                         scores[robot.alliance] += 1
                         pieces.recycle_fuel(robot, config['field'])
@@ -168,15 +177,19 @@ def main():
         screen.blit(red_score_surf, (score_x_anchor, 20))
         screen.blit(blue_score_surf, (score_x_anchor + 200, 20))
         
-        # Robot Status / Controls
-        # Red
-        r_shoot = "ON" if red_robot.auto_shoot_enabled else "OFF"
-        r_pass = "ON" if red_robot.auto_pass_enabled else "OFF"
-        screen.blit(font.render(f"RED: {red_robot.drivetrain.upper()} S={r_shoot}(V) P={r_pass}(B)", True, (255, 150, 150)), (field_width - 320, 10))
-        # Blue
-        b_shoot = "ON" if blue_robot.auto_shoot_enabled else "OFF"
-        b_pass = "ON" if blue_robot.auto_pass_enabled else "OFF"
-        screen.blit(font.render(f"BLUE: {blue_robot.drivetrain.upper()} S={b_shoot}(/) P={b_pass}(SHFT)", True, (150, 150, 255)), (field_width - 320, 35))
+        # Robot Status / Controls (Alliance Summaries)
+        red_main = next((r for r in robots if r.alliance == "red"), None)
+        blue_main = next((r for r in robots if r.alliance == "blue"), None)
+        
+        if red_main:
+            r_shoot = "ON" if red_main.auto_shoot_enabled else "OFF"
+            r_pass = "ON" if red_main.auto_pass_enabled else "OFF"
+            screen.blit(font.render(f"RED Team (3 Bots) S={r_shoot} P={r_pass}", True, (255, 150, 150)), (field_width - 350, 10))
+            
+        if blue_main:
+            b_shoot = "ON" if blue_main.auto_shoot_enabled else "OFF"
+            b_pass = "ON" if blue_main.auto_pass_enabled else "OFF"
+            screen.blit(font.render(f"BLUE Team (3 Bots) S={b_shoot} P={b_pass}", True, (150, 150, 255)), (field_width - 350, 35))
         
         # Tuning Panel
         pygame.draw.rect(screen, (30, 30, 30), (20, 65, 450, 25), border_radius=5)

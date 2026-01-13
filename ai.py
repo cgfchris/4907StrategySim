@@ -1,5 +1,6 @@
 import math
 import time
+import random
 
 class RobotAI:
     def __init__(self, alliance="blue", is_tank=True):
@@ -26,7 +27,15 @@ class RobotAI:
                     count += 1
         return count
 
-    def update(self, robot, field, pieces, can_score):
+    def update(self, robot, field, pieces, can_score, other_robots=[]):
+        # Tracking targets for coordination (simplified)
+        targeted_fuels = []
+        for other in other_robots:
+            if other != robot and other.alliance == robot.alliance:
+                # We could ideally store the target in the robot class, 
+                # but for now let's just use proximity logic
+                pass
+
         # State Transitions
         alliance_fuel = self.count_alliance_fuel(pieces, field)
         
@@ -95,6 +104,16 @@ class RobotAI:
             if can_score:
                 for fuel in pieces.fuels:
                     if not fuel.collected and fuel.immune_timer <= 0:
+                        # Coordination: Avoid fuel being chased by teammates
+                        is_targeted = False
+                        for other in other_robots:
+                            if other != robot and other.alliance == robot.alliance:
+                                if self.get_dist(other.x, other.y, fuel.x, fuel.y) < 20: # Someone is very close
+                                    is_targeted = True
+                                    break
+                        
+                        if is_targeted and random.random() < 0.7: continue # 70% chance to look for something else
+
                         # Is it in our zone?
                         in_zone = (is_red and fuel.x < field.divider_x) or (not is_red and fuel.x > (field.width_in - field.divider_x))
                         if in_zone:
@@ -107,6 +126,14 @@ class RobotAI:
             if not nearest_fuel:
                 for fuel in pieces.fuels:
                     if not fuel.collected and fuel.immune_timer <= 0:
+                        is_targeted = False
+                        for other in other_robots:
+                            if other != robot and other.alliance == robot.alliance:
+                                if self.get_dist(other.x, other.y, fuel.x, fuel.y) < 20:
+                                    is_targeted = True
+                                    break
+                        if is_targeted and random.random() < 0.7: continue
+
                         dist = self.get_dist(robot.x, robot.y, fuel.x, fuel.y)
                         if dist < min_dist:
                             min_dist = dist
