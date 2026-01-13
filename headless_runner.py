@@ -58,6 +58,9 @@ def run_match(config, match_id, verbose=False):
     dt = 1/60.0
     match_duration = 160
     
+    auto_winner = None
+    stage_alliances = ["red", "blue", "red", "blue"] # Default
+    
     keys = [False] * 512
     dummy_ctrl = {'up': 0, 'down': 0, 'left': 0, 'right': 0, 'rotate_l': 0, 'rotate_r': 0, 'shoot_key': 0, 'pass_key': 0}
     
@@ -67,13 +70,29 @@ def run_match(config, match_id, verbose=False):
     while game_time < match_duration:
         # Match Phases
         active_alliance = "both"
-        if 0 <= game_time < 20: phase = "AUTO"
-        elif 20 <= game_time < 30: phase = "TRANSITION"
+        if 0 <= game_time < 20: 
+            phase = "AUTO"
+            active_alliance = "both"
+        elif 20 <= game_time < 30: 
+            phase = "TRANSITION"
+            active_alliance = "both"
+            if auto_winner is None:
+                if scores["red"] > scores["blue"]: auto_winner = "red"
+                elif scores["blue"] > scores["red"]: auto_winner = "blue"
+                else: auto_winner = "tie"
+                
+                if auto_winner == "red":
+                    stage_alliances = ["blue", "red", "blue", "red"]
+                elif auto_winner == "blue":
+                    stage_alliances = ["red", "blue", "red", "blue"]
+        
         elif 30 <= game_time < 130:
-            stage = int((game_time - 30) // 25)
-            phase = f"TELEOP STAGE {stage + 1}"
-            active_alliance = "red" if stage % 2 == 0 else "blue"
-        elif 130 <= game_time < 160: phase = "ENDGAME"
+            stage_idx = int((game_time - 30) // 25)
+            phase = f"TELEOP STAGE {stage_idx + 1}"
+            active_alliance = stage_alliances[stage_idx]
+        elif 130 <= game_time < 160: 
+            phase = "ENDGAME"
+            active_alliance = "both"
         else: phase = "FINISHED"
 
         if verbose and phase != last_phase:
@@ -90,6 +109,9 @@ def run_match(config, match_id, verbose=False):
                     pieces.recycle_fuel(robot, config['field'])
         
         pieces.update(robots, game_time, config['field'])
+        for alliance, amount in pieces.penalties:
+            scores[alliance] = max(0, scores[alliance] - amount)
+        
         game_time += dt
         
     end_real = time.perf_counter()

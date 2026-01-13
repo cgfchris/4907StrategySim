@@ -13,6 +13,7 @@ class Fuel:
         self.vel_x = 0
         self.vel_y = 0
         self.immune_timer = 0 # Brief period where it can't be collected
+        self.bounces = 0 # Track bounces for Hub Penalty
         
     def draw(self, screen, ppi):
         if not self.collected:
@@ -23,6 +24,7 @@ class GamePieceManager:
         self.ppi = ppi
         self.fuels = []
         self.outpost_released = False
+        self.penalties = [] # List of (alliance, amount)
         
         # Physics Params (Tuneable)
         self.bounciness = config.get('physics', {}).get('bounciness', 0.8)
@@ -46,7 +48,9 @@ class GamePieceManager:
             sp_x, sp_y = depot_w/cols, depot_h/rows
             for r in range(rows):
                 for c in range(cols):
-                    self.fuels.append(Fuel(x_start + c*sp_x + sp_x/2, y_start + r*sp_y + sp_y/2, self.ppi, "depot"))
+                    f = Fuel(x_start + c*sp_x + sp_x/2, y_start + r*sp_y + sp_y/2, self.ppi, "depot")
+                    f.bounces = 1
+                    self.fuels.append(f)
 
         spawn_depot_grid(ds_x, depot_rect_y)
         spawn_depot_grid(field_w - ds_x - depot_w, depot_rect_y)
@@ -60,7 +64,9 @@ class GamePieceManager:
         
         for r in range(rows):
             for c in range(cols):
-                self.fuels.append(Fuel(start_x + c*spacing_x + spacing_x/2, start_y + r*spacing_y + spacing_y/2, self.ppi, "scatter"))
+                f = Fuel(start_x + c*spacing_x + spacing_x/2, start_y + r*spacing_y + spacing_y/2, self.ppi, "scatter")
+                f.bounces = 1 # Initial field fuel starts as "bounced"
+                self.fuels.append(f)
             
     def recycle_fuel(self, robot, config):
         field_w = config['width_inches']
@@ -134,6 +140,8 @@ class GamePieceManager:
         if game_time > 30 and not self.outpost_released:
             self.release_outpost(config)
 
+        self.penalties = [] # Clear penalties each frame (or handle them in main)
+
         for fuel in self.fuels:
             if not fuel.collected:
                 if fuel.immune_timer > 0:
@@ -151,15 +159,19 @@ class GamePieceManager:
                     if fuel.x < 5: 
                         fuel.vel_x = abs(fuel.vel_x) * self.bounciness
                         fuel.x = 5
+                        fuel.bounces += 1
                     if fuel.x > config['width_inches']-5: 
                         fuel.vel_x = -abs(fuel.vel_x) * self.bounciness
                         fuel.x = config['width_inches']-5
+                        fuel.bounces += 1
                     if fuel.y < 5: 
                         fuel.vel_y = abs(fuel.vel_y) * self.bounciness
                         fuel.y = 5
+                        fuel.bounces += 1
                     if fuel.y > config['length_inches']-5: 
                         fuel.vel_y = -abs(fuel.vel_y) * self.bounciness
                         fuel.y = config['length_inches']-5
+                        fuel.bounces += 1
 
                 # Important: skip collection if immune
                 if fuel.immune_timer > 0:
@@ -208,6 +220,9 @@ class GamePieceManager:
                         if collected and robot.holding < robot.capacity and robot.intake_transition_timer <= 0:
                             fuel.collected = True
                             robot.holding += 1
+                            
+                            if fuel.bounces == 0:
+                                self.penalties.append((robot.alliance, 15))
                             break 
                         
                         # If not collected, check for physical collision (The "Kick")
@@ -225,6 +240,7 @@ class GamePieceManager:
                             
                             fuel.vel_x = math.cos(angle_to_fuel) * kick_vel
                             fuel.vel_y = math.sin(angle_to_fuel) * kick_vel
+                            fuel.bounces += 1
                         
     def draw(self, screen):
         for fuel in self.fuels:

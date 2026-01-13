@@ -1,0 +1,43 @@
+- [x] we can only shoot from our alliance zone,  not in the neutral zone
+- [x] fuel should be stored in the center of the neutral zone as per the game manual and please look at how the depot and outpost fuel is stored.  outpost fuel is dumped out by the human player at a certain point after the match starts
+- [x] can you recheck the game manual for the zone sizes, they don't look right
+- [x] the trench and bump still doesn't seem to work right, please recheck the manual or I can give you more detailed instructions if necessary
+- [x] right now you are "field oriented" swerve but I think what I want is "robot oriented" swerve (the controls are with respect to the robot's orientation)
+- [x] Segmented divider (Hub 47", Bumps 73", Uprights 12", Trenches 50")
+- [x] Fuel box centered in neutral zone (182" x 72")
+- [x] robot should not be able to pick up balls on the side that don't have intakes, the balls should be pushed away
+- [x] the field coloring is not right the alliance zones are red and blue and go right to either size of the field (top and bottom in our sim) and end at the centerline of the hub / bump / trench the neutral zone goes from one hub to the other and is also full width of the field and should be shaded yellow
+- [x] need to keep the text at the top away from the field area as it's hard to see what's happening there.  also the far edges of the field are a different shade which is weird.  
+- [x] make the balls in the neutral zone more of a grid when the match starts (not random)
+- [x] balls in the alliance zone come from the "outpost" and should be deployed into the field from that point (as if they are rolling out) at a certain time after the match starts
+- [x] balls in the depot at the start of the match (X24) and the depot is 42 X 27" please refer to the diagram I pasted
+- [x] after a ball is scored, it should roll out the back of the hub back into the neutral zone... can we simulate it randomly rolling out that way?
+- [x] default auto shoot to be enabled
+- [x] please explain the shooting range it seems I can't shoot when I'm close to the hub.  maybe we can define a range of distances that the robot can shoot from?
+- [x] balls should scatter / bounce more when coming out of the outpost and hub
+- [x] the outpost should be at the opposite corner from where you have it
+- [x] there is only 1 depot and it is center is about 76" from the center of the field and it is up against the side of the field.  the balls in the depot shoudl be a grid not random
+- [x] colors for the zones are not stretching right to the sides of the field yet.
+- [x] I would like to implement a pass from the neutral zone to the alliance zone.  lets start by making it another control where I can turn on auto-pass and it will lob balls into my alliance zone.  the lobs should attempt to get balls into the sides of the alliance zone but.  if I am right behind the hub the ball has to be lobbed a lot higher as there is a net above the hub.  
+- [x] balls are still not bouncy enough:  can you make some controls so I can adjust them in the game?  then we can fine tune the settings
+- [x] even when I have set my min distance to 0 I still can't get right up to the hub to score
+- [x] robot should be designated to an alliance red or blue and only will score or pass when in that alliance zone.
+- [x] if the robot hits a ball it doesn't seem to bound away enough, is there something we can do to make it more realistically like a ball when it is hit?
+- [x] let's implement the game periods:  auto, teleop, endgame:  during auto both teams can score then there is a 10s transition where both teams can score in teleop, during the rest of teleop there are 4 stages each stage is 25 seconds and only one alliance can score.  the hub that can be scored on should light up in that stage.  Then the endgame after that is 30s where both teams can score
+- [x] right now in the top text area the fuel count is overtop of the stage message... maybe we don't need the fuel count it's on the robot already
+- [x] can we implement a 2nd robot so we can play head to head?  one for each alliance with separate controls for each?
+- [x] reverse red and blue controls
+- [x] make a clear place in the config to design different red and blue robots... hopper capacity, whether 2 sided intake or 1, max speed, acceleration, rotation speed, etc, dimensions, tank drive maybe?
+- [x] balls seem to be taken in by a bot even if the intake side doesn't hit it, can you make it so a ball has to clearly hit the intake before it is caught?
+- [x] one more thing: the scores need to move to the left the blue score is on top of the red blue text at the top right
+- [x] computer player AI support (separate ai.py file)
+- [x] ai players are getting stuck at some point, maybe because they are stuck on the edge or an immovable object, we need to make a way for them to unstuck themselves (Improved detection needed)
+- [x] the sides of the field (top and bottom in my view) are darker colored but should be the same color as the center
+- [x] need more room at the top for the text area
+- [x] now that we have more hud room, move the player control text to the bottom below the ball physics control
+- [x] robots should know when they have plenty of fuel in their alliance zone and they should be scoring, not passing... give the ai some full field knowledge for offense
+- [x] ai still getting stuck on immovable objects: we may need to think about how the robot acts when it hits a side... maybe the robot movement should translate to "slide" on the object if it's not driving straight in? or we have to improve how much the ai uses it's physics to determine where to go: rather than waiting to see if it can move, it should use physics to determine if it can move and where - also, the ai could use the field dimensions to know where it is and how to move around the field
+- [x] robots should not be able to move over each other: they should bump into each other and have to go around
+- [x] fuel bounces off the intake a lot... often a robot is chasing a fuel that hits directly on it's intake. If a fuel has a direct hit on th intake it should be caught. We could in the future adjust this somehow with a confi (how successful an intake is in % chance of capture)
+- [ ] robots are not allowed to collect fuel from the hub before it bounces to the floor. if they do, it's a major penalty 15 pts. Can we somehow implement this? the ai should avoid it (we don't want to prevent it physically because we may do ml later)
+- [ ] the team that scores the most during auto period is the one that goes second so if red wins in auto, then then get their hub active in stage 2.

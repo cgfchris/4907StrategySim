@@ -83,7 +83,9 @@ def main():
     paused = False
     last_abs_time = time.time()
     
-    # Tuning State
+    # Match Logic State
+    auto_winner = None
+    stage_alliances = ["red", "blue", "red", "blue"] # Default
     tuning_targets = ["bounciness", "friction"]
     target_idx = 0
     
@@ -116,14 +118,29 @@ def main():
             game_time += dt
             
             # Match State Machine
-            active_alliance = "both"
-            if 0 <= game_time < 20: active_alliance = "both" # Auto
-            elif 20 <= game_time < 30: active_alliance = "both" # Transition
+            if 0 <= game_time < 20: 
+                active_alliance = "both"
+            elif 20 <= game_time < 30: 
+                active_alliance = "both"
+                if auto_winner is None:
+                    if scores["red"] > scores["blue"]: auto_winner = "red"
+                    elif scores["blue"] > scores["red"]: auto_winner = "blue"
+                    else: auto_winner = "tie"
+                    
+                    # Update Stage Alliances: Winner goes second (Stage 2 & 4)
+                    if auto_winner == "red":
+                        stage_alliances = ["blue", "red", "blue", "red"]
+                    elif auto_winner == "blue":
+                        stage_alliances = ["red", "blue", "red", "blue"]
+                    # If tie, stay with default [red, blue, red, blue]
+            
             elif 30 <= game_time < 130:
-                stage = int((game_time - 30) // 25)
-                active_alliance = "red" if stage % 2 == 0 else "blue"
-            elif 130 <= game_time < 160: active_alliance = "both" # Endgame
-            else: active_alliance = None # Match Over
+                stage_idx = int((game_time - 30) // 25)
+                active_alliance = stage_alliances[stage_idx]
+            elif 130 <= game_time < 160: 
+                active_alliance = "both"
+            else: 
+                active_alliance = None
             
             keys = pygame.key.get_pressed()
             
@@ -141,8 +158,11 @@ def main():
                     if can_score:
                         scores[robot.alliance] += 1
                         pieces.recycle_fuel(robot, config['field'])
-                
+            
+            # Update Game Pieces & Apply Penalties
             pieces.update(robots, game_time, config['field'])
+            for alliance, amount in pieces.penalties:
+                scores[alliance] = max(0, scores[alliance] - amount)
         
         # --- DRAWING ---
         screen.fill((20, 20, 20))
