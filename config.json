@@ -4,6 +4,7 @@
     "red_alliance": [
         {
             "name": "Red 1",
+            "model_path": "ml_models/PPO_9_frc_ppo_1467520_steps.zip",
             "width": 30,
             "length": 25,
             "max_speed": 150,
@@ -11,7 +12,7 @@
             "rotation_speed": 180,
             "intake_speed": 7,
             "capacity": 20,
-            "launch_accuracy": 0.95,
+            "launch_accuracy": 0.85,
             "shoot_rate": 5,
             "min_shoot_dist": 0,
             "max_shoot_dist": 160,
@@ -20,10 +21,10 @@
             "auto_shoot_max_speed": 60,
             "auto_shoot_accel": 100,
             "drivetrain": "swerve",
-            "intake_type": "dual",
+            "intake_type": "single",
             "is_ai": true,
             "can_pass": true,
-            "intake_success_rate": 1.0
+            "intake_success_rate": 0.95
         },
         {
             "name": "Red 2",
@@ -77,13 +78,13 @@
             "name": "Blue 1",
             "width": 30,
             "length": 25,
-            "max_speed": 140,
-            "acceleration": 180,
-            "rotation_speed": 160,
+            "max_speed": 150,
+            "acceleration": 200,
+            "rotation_speed": 180,
             "intake_speed": 7,
-            "capacity": 30,
-            "launch_accuracy": 0.92,
-            "shoot_rate": 4,
+            "capacity": 20,
+            "launch_accuracy": 0.85,
+            "shoot_rate": 5,
             "min_shoot_dist": 0,
             "max_shoot_dist": 160,
             "auto_shoot_enabled": true,
@@ -94,7 +95,7 @@
             "intake_type": "single",
             "is_ai": true,
             "can_pass": true,
-            "intake_success_rate": 1.0
+            "intake_success_rate": 0.95
         },
         {
             "name": "Blue 2",

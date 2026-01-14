@@ -1,11 +1,27 @@
 import math
 import time
 import random
+import json
+import os
 
 class RobotAI:
-    def __init__(self, alliance="blue", is_tank=True):
+    def __init__(self, alliance="blue", is_tank=True, model_path=None):
         self.alliance = alliance
         self.is_tank = is_tank
+        self.model_path = model_path
+        self.model = None
+        
+        if model_path and os.path.exists(model_path):
+            try:
+                from stable_baselines3 import PPO
+                self.model = PPO.load(model_path)
+                print(f"Loaded ML Model for {alliance} AI: {model_path}")
+            except ImportError:
+                print("Warning: stable-baselines3 not installed. Using heuristic AI.")
+            except Exception as e:
+                print(f"Error loading ML Model: {e}")
+
+        self.last_x = 0
         self.last_x = 0
         self.last_y = 0
         self.stuck_timer = 0
@@ -40,15 +56,24 @@ class RobotAI:
                     count += 1
         return count
 
-    def update(self, robot, field, pieces, can_score, other_robots=[]):
-        # Tracking targets for coordination (simplified)
-        targeted_fuels = []
-        for other in other_robots:
-            if other != robot and other.alliance == robot.alliance:
-                # We could ideally store the target in the robot class, 
-                # but for now let's just use proximity logic
-                pass
+    def update(self, robot, field, pieces, can_score, other_robots=[], game_time=0, match_duration=160, sim_config=None):
+        # 1. Try ML Prediction if model exists
+        if self.model and sim_config:
+            from ml_utils import get_observation
+            obs = get_observation(robot, field, pieces, sim_config, game_time, match_duration)
+            action, _states = self.model.predict(obs, deterministic=True)
+            
+            # Map actions back to inputs (States)
+            return {
+                'x': action[0],
+                'y': action[1],
+                'rot': action[2],
+                'shoot_state': action[3] > 0.5,
+                'pass_state': action[4] > 0.5,
+                'dump_state': action[5] > 0.5
+            }
 
+        # 2. Heuristic Logic (Fallback)
         # State Transitions
         alliance_fuel = self.count_alliance_fuel(pieces, field)
         

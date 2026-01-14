@@ -3,6 +3,8 @@ import json
 import time
 import os
 import sys
+import argparse
+import glob
 from robot import Robot
 from field import Field
 from game_piece import GamePieceManager
@@ -18,6 +20,10 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test-latest", action="store_true", help="Test the latest model as Red 1 in 1v1 mode")
+    args = parser.parse_args()
+
     pygame.init()
     
     with open(resource_path('config.json'), 'r') as f:
@@ -62,6 +68,23 @@ def main():
     match_mode = config.get('match_mode', '3v3')
     sim_state = "MENU" # MENU or PLAYING
     
+    if args.test_latest:
+        match_mode = "1v1"
+        sim_state = "PLAYING"
+        
+        # Find latest model
+        model_dir = "ml_models"
+        files = glob.glob(os.path.join(model_dir, "*.zip"))
+        if files:
+            latest_model = max(files, key=os.path.getmtime)
+            print(f"Testing latest model: {latest_model}")
+            # Inject into config temp override
+            config['red_alliance'][0]['model_path'] = latest_model
+            config['red_alliance'][0]['is_ai'] = True
+        else:
+            print("No models found in ml_models/ to test.")
+            sim_state = "MENU"
+    
     # Initialize robots (will be populated on Start)
     robots = []
     robot_ais = {}
@@ -93,7 +116,7 @@ def main():
             robot.holding = min(8, robot.capacity)
             robots.append(robot)
             if r_cfg.get('is_ai'):
-                robot_ais[robot] = RobotAI("red", r_cfg.get('drivetrain') == "tank")
+                robot_ais[robot] = RobotAI("red", r_cfg.get('drivetrain') == "tank", r_cfg.get('model_path'))
                 
         # Blue Alliance
         for i, b_cfg in enumerate(blue_all):
@@ -103,7 +126,7 @@ def main():
             robot.holding = min(8, robot.capacity)
             robots.append(robot)
             if b_cfg.get('is_ai'):
-                robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank")
+                robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank", b_cfg.get('model_path'))
         
         pieces.fuels = []
         pieces.spawn_initial(config)
@@ -120,6 +143,9 @@ def main():
     tuning_targets = ["bounciness", "friction"]
     target_idx = 0
     
+    if sim_state == "PLAYING":
+        init_match()
+
     running = True
     while running:
         current_abs_time = time.time()
@@ -204,7 +230,7 @@ def main():
                 
                 ai_inputs = None
                 if robot in robot_ais:
-                    ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots)
+                    ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots, game_time, 160, config)
                 
                 if robot.update(dt, keys, ctrl, field, game_time, robots, pieces, can_score, ai_inputs):
                     if can_score:

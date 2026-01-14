@@ -46,17 +46,10 @@ def run_match(config, match_id, mode="3v3", verbose=False):
         robot.holding = min(8, robot.capacity)
         robots.append(robot)
         if r_cfg.get('is_ai'):
-            robot_ais[robot] = RobotAI("red", r_cfg.get('drivetrain') == "tank")
-            
-    # Blue Alliance
-    for i, b_cfg in enumerate(blue_all):
-        spacing = field_height_in / (len(blue_all) + 1)
-        y_pos = spacing * (i + 1)
-        robot = Robot(field_width_in - 100, y_pos, b_cfg, "blue")
-        robot.holding = min(8, robot.capacity)
-        robots.append(robot)
+            robot_ais[robot] = RobotAI("red", r_cfg.get('drivetrain') == "tank", r_cfg.get('model_path'))
+...
         if b_cfg.get('is_ai'):
-            robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank")
+            robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank", b_cfg.get('model_path'))
     
     pieces.spawn_initial(config)
     
@@ -114,7 +107,7 @@ def run_match(config, match_id, mode="3v3", verbose=False):
             
             ai_inputs = None
             if robot in robot_ais:
-                ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots)
+                ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots, game_time, match_duration, config)
             
             if robot.update(dt, keys, dummy_ctrl, field, game_time, robots, pieces, can_score, ai_inputs):
                 if can_score:

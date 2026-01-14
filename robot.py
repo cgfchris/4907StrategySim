@@ -140,13 +140,20 @@ class Robot:
 
         # Movement Input
         if ai_inputs:
-            # AI uses normalized -1.0 to 1.0 inputs
-            if self.drivetrain == "swerve":
-                target_vel_x_robot = ai_inputs.get('x', 0) * current_max_speed
-                target_vel_y_robot = ai_inputs.get('y', 0) * current_max_speed
-            else:
-                # Tank: Y is forward/back
-                target_vel_y_robot = ai_inputs.get('y', 0) * current_max_speed
+            # AI uses normalized -1.0 to 1.0 inputs. Sanitize for robustness.
+            try:
+                def sanitize(val):
+                    v = float(val)
+                    return v if math.isfinite(v) else 0.0
+                
+                if self.drivetrain == "swerve":
+                    target_vel_x_robot = sanitize(ai_inputs.get('x', 0)) * current_max_speed
+                    target_vel_y_robot = sanitize(ai_inputs.get('y', 0)) * current_max_speed
+                else:
+                    # Tank: Y is forward/back
+                    target_vel_y_robot = sanitize(ai_inputs.get('y', 0)) * current_max_speed
+            except (TypeError, ValueError):
+                pass # Already zeroed
         else:
             # Human (Keyboard)
             if self.drivetrain == "swerve":
@@ -177,20 +184,18 @@ class Robot:
         if ai_inputs:
             self.rot_velocity = ai_inputs.get('rot', 0) * self.rotation_speed
             
-            # AI Toggles 
-            if ai_inputs.get('shoot_toggle'): 
-                self.auto_shoot_enabled = not self.auto_shoot_enabled
-                ai_inputs['shoot_toggle'] = False
-            if ai_inputs.get('pass_toggle'): 
-                self.auto_pass_enabled = not self.auto_pass_enabled
-                ai_inputs['pass_toggle'] = False
+            # AI State Controls (Continuous Toggles)
+            if 'shoot_state' in ai_inputs:
+                self.auto_shoot_enabled = ai_inputs['shoot_state']
+            if 'pass_state' in ai_inputs:
+                self.auto_pass_enabled = ai_inputs['pass_state']
             
-            if ai_inputs.get('dump_toggle'):
+            num_dumped = 0
+            if ai_inputs.get('dump_state'):
                 if pieces:
                     num_dumped = self.dump(current_time, pieces)
                     for _ in range(num_dumped):
                         pieces.spawn_dump(self.x, self.y)
-                ai_inputs['dump_toggle'] = False
             
             # Intake Disable Control
             self.disable_intake = ai_inputs.get('disable_intake', False)
@@ -247,7 +252,15 @@ class Robot:
         new_y = self.y + field_vel_y * dt * speed_factor
         
         def check_collision(nx, ny):
-            rect = pygame.Rect(nx - self.length/2, ny - self.width/2, self.length, self.width)
+            # Defensive check for pygame.Rect - must be finite numbers
+            if not (math.isfinite(nx) and math.isfinite(ny)):
+                return True
+                
+            try:
+                rect = pygame.Rect(int(nx - self.length/2), int(ny - self.width/2), int(self.length), int(self.width))
+            except (TypeError, ValueError):
+                return True 
+            
             for wall in field.colliders:
                 if rect.colliderect(wall): return True
             for hub in field.hubs:
@@ -261,8 +274,15 @@ class Robot:
                 if abs(nx - other.x) > (self.length + other.length)/2 + 2: continue
                 if abs(ny - other.y) > (self.width + other.width)/2 + 2: continue
                 
-                other_rect = pygame.Rect(other.x - other.length/2, other.y - other.width/2, other.length, other.width)
-                if rect.colliderect(other_rect): return True
+                # Ensure other robot coordinates are also valid
+                if not (math.isfinite(other.x) and math.isfinite(other.y)):
+                    continue
+                
+                try:
+                    other_rect = pygame.Rect(int(other.x - other.length/2), int(other.y - other.width/2), int(other.length), int(other.width))
+                    if rect.colliderect(other_rect): return True
+                except (TypeError, ValueError):
+                    continue
             return False
 
         # Independent Axis Movement (Sliding)
@@ -294,6 +314,8 @@ class Robot:
         if self.penalty_timer > 0:
             self.penalty_timer -= dt
             
+        if num_dumped > 0:
+            return num_dumped
         return scored
 
     def draw(self, screen, ppi, font):

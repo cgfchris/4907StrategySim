@@ -1,0 +1,31 @@
+{
+    "reward_shaping": {
+        "score_reward": 100.0,
+        "pickup_reward": 2.0,
+        "dump_penalty": -20.0,
+        "major_foul_penalty": -50.0,
+        "time_penalty_per_step": -0.01,
+        "proximity_reward_factor": 0.05,
+        "holding_reward_factor": 0.1
+    },
+    "env_params": {
+        "frames_per_step": 10,
+        "grid_size": [
+            4,
+            4
+        ],
+        "max_steps": 1000,
+        "normalize_observations": true
+    },
+    "training_params": {
+        "algorithm": "PPO",
+        "total_timesteps": 10000000,
+        "learning_rate": 0.0003,
+        "n_steps": 256,
+        "batch_size": 64,
+        "gamma": 0.99,
+        "n_envs": 16,
+        "eval_freq": 20000,
+        "eval_episodes": 5
+    }
+}

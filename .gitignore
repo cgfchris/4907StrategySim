@@ -16,5 +16,9 @@ dist/
 build/
 *.spec
 
+# ML Training
+ml_logs/
+ml_models/
+
 # Keep testing notes
 !testingNotes.md
