@@ -1,5 +1,6 @@
 {
     "_comment": "Units: inches, seconds, degrees. Hub/Divider at 181.56. Alliance scoring zone depth 118.25.",
+    "match_mode": "3v3",
     "red_alliance": [
         {
             "name": "Red 1",
@@ -21,6 +22,7 @@
             "drivetrain": "swerve",
             "intake_type": "dual",
             "is_ai": true,
+            "can_pass": true,
             "intake_success_rate": 1.0
         },
         {
@@ -43,6 +45,7 @@
             "drivetrain": "tank",
             "intake_type": "single",
             "is_ai": true,
+            "can_pass": true,
             "intake_success_rate": 0.75
         },
         {
@@ -65,6 +68,7 @@
             "drivetrain": "tank",
             "intake_type": "dual",
             "is_ai": true,
+            "can_pass": true,
             "intake_success_rate": 0.9
         }
     ],
@@ -89,6 +93,7 @@
             "drivetrain": "swerve",
             "intake_type": "single",
             "is_ai": true,
+            "can_pass": true,
             "intake_success_rate": 1.0
         },
         {
@@ -111,6 +116,7 @@
             "drivetrain": "tank",
             "intake_type": "single",
             "is_ai": true,
+            "can_pass": true,
             "intake_success_rate": 0.9
         },
         {
@@ -133,6 +139,7 @@
             "drivetrain": "tank",
             "intake_type": "dual",
             "is_ai": true,
+            "can_pass": true,
             "intake_success_rate": 0.9
         }
     ],
@@ -150,6 +157,13 @@
         "bump_width": 73,
         "upright_width": 12,
         "trench_width": 50,
+        "outpost_dump_time": 5.0,
+        "hub_penalty_value": 5,
+        "ai_update_rate": 30,
+        "spatial_grid_size": [
+            6,
+            3
+        ],
         "zones": {
             "red_alliance_end": 118.25,
             "blue_alliance_start": 532.97,

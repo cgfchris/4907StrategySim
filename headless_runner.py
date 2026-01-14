@@ -23,7 +23,7 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
-def run_match(config, match_id, verbose=False):
+def run_match(config, match_id, mode="3v3", verbose=False):
     ppi = config['field']['pixels_per_inch']
     field_width_in = config['field']['width_inches']
     field_height_in = config['field']['length_inches']
@@ -35,25 +35,35 @@ def run_match(config, match_id, verbose=False):
     robots = []
     robot_ais = {}
     
+    red_all = config['red_alliance'] if mode == "3v3" else [config['red_alliance'][0]]
+    blue_all = config['blue_alliance'] if mode == "3v3" else [config['blue_alliance'][0]]
+    
     # Red Alliance
-    for i, r_cfg in enumerate(config['red_alliance']):
-        y_pos = (field_height_in / 4) * (i + 1)
+    for i, r_cfg in enumerate(red_all):
+        spacing = field_height_in / (len(red_all) + 1)
+        y_pos = spacing * (i + 1)
         robot = Robot(100, y_pos, r_cfg, "red")
+        robot.holding = min(8, robot.capacity)
         robots.append(robot)
         if r_cfg.get('is_ai'):
             robot_ais[robot] = RobotAI("red", r_cfg.get('drivetrain') == "tank")
             
     # Blue Alliance
-    for i, b_cfg in enumerate(config['blue_alliance']):
-        y_pos = (field_height_in / 4) * (i + 1)
+    for i, b_cfg in enumerate(blue_all):
+        spacing = field_height_in / (len(blue_all) + 1)
+        y_pos = spacing * (i + 1)
         robot = Robot(field_width_in - 100, y_pos, b_cfg, "blue")
+        robot.holding = min(8, robot.capacity)
         robots.append(robot)
         if b_cfg.get('is_ai'):
             robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank")
     
+    pieces.spawn_initial(config)
+    
     # (AI initialization moved into the robot loops above)
         
     scores = {"red": 0, "blue": 0}
+    penalty_scores = {"red": 0, "blue": 0}
     game_time = 0
     dt = 1/60.0
     match_duration = 160
@@ -108,22 +118,28 @@ def run_match(config, match_id, verbose=False):
                     scores[robot.alliance] += 1
                     pieces.recycle_fuel(robot, config['field'])
         
-        pieces.update(robots, game_time, config['field'])
-        # (Penalties disabled for now)
-        # for alliance, amount in pieces.penalties:
-        #     scores[alliance] = max(0, scores[alliance] - amount)
+        pieces.update(robots, game_time, config)
+        
+        # Process Penalties (+15 for opponent gained by this alliance)
+        for foul_alliance, amount in pieces.penalties:
+            other = "blue" if foul_alliance == "red" else "red"
+            penalty_scores[other] += amount
         
         game_time += dt
         
     end_real = time.perf_counter()
     duration = end_real - start_real
     
-    print(f"Match {match_id:2d}: RED {scores['red']:3d} - BLUE {scores['blue']:3d} ({duration:.2f}s)")
-    return scores, duration
+    red_total = scores['red'] + penalty_scores['red']
+    blue_total = scores['blue'] + penalty_scores['blue']
+    
+    print(f"Match {match_id:2d}: RED {red_total:3d} (+{penalty_scores['red']}P) - BLUE {blue_total:3d} (+{penalty_scores['blue']}P) ({duration:.2f}s)")
+    return {"scores": scores, "penalties": penalty_scores}, duration
 
 def main():
     parser = argparse.ArgumentParser(description="FRC Strategy Simulator - Headless Batch Runner")
     parser.add_argument("--runs", type=int, default=1, help="Number of match simulations to run")
+    parser.add_argument("--mode", type=str, default="3v3", choices=["1v1", "3v3"], help="Match mode (1v1 or 3v3)")
     parser.add_argument("--verbose", action="store_true", help="Print detailed phase transitions for each match")
     args = parser.parse_args()
 
@@ -142,17 +158,20 @@ def main():
     for i in range(args.runs):
         # Set unique seed for each match to ensure variability if random is used
         random.seed(time.time() + i)
-        score, dur = run_match(config, i + 1, args.verbose)
+        score, dur = run_match(config, i + 1, args.mode, args.verbose)
         all_results.append(score)
         
     total_end = time.perf_counter()
     total_dur = total_end - total_start
     
     # Calculate Stats
-    red_scores = [r['red'] for r in all_results]
-    blue_scores = [r['blue'] for r in all_results]
-    red_wins = sum(1 for r in all_results if r['red'] > r['blue'])
-    blue_wins = sum(1 for r in all_results if r['blue'] > r['red'])
+    red_scores = [r['scores']['red'] + r['penalties']['red'] for r in all_results]
+    blue_scores = [r['scores']['blue'] + r['penalties']['blue'] for r in all_results]
+    red_penalties = [r['penalties']['red'] for r in all_results]
+    blue_penalties = [r['penalties']['blue'] for r in all_results]
+    
+    red_wins = sum(1 for r in all_results if (r['scores']['red'] + r['penalties']['red']) > (r['scores']['blue'] + r['penalties']['blue']))
+    blue_wins = sum(1 for r in all_results if (r['scores']['blue'] + r['penalties']['blue']) > (r['scores']['red'] + r['penalties']['red']))
     ties = len(all_results) - red_wins - blue_wins
     
     print("-" * 40)
@@ -164,8 +183,8 @@ def main():
     print(f"BLUE WINS: {blue_wins} ({blue_wins/args.runs*100:.1f}%)")
     if ties > 0: print(f"TIES:      {ties} ({ties/args.runs*100:.1f}%)")
     print("-" * 20)
-    print(f"RED Score:  Avg: {sum(red_scores)/args.runs:.1f} | Max: {max(red_scores)} | Min: {min(red_scores)}")
-    print(f"BLUE Score: Avg: {sum(blue_scores)/args.runs:.1f} | Max: {max(blue_scores)} | Min: {min(blue_scores)}")
+    print(f"RED Score:  Avg: {sum(red_scores)/args.runs:.1f} (Avg Pen: {sum(red_penalties)/args.runs:.1f}) | Max: {max(red_scores)}")
+    print(f"BLUE Score: Avg: {sum(blue_scores)/args.runs:.1f} (Avg Pen: {sum(blue_penalties)/args.runs:.1f}) | Max: {max(blue_scores)}")
     print("=" * 40)
 
     pygame.quit()

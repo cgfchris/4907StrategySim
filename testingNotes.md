@@ -38,6 +38,13 @@
 - [x] robots should know when they have plenty of fuel in their alliance zone and they should be scoring, not passing... give the ai some full field knowledge for offense
 - [x] ai still getting stuck on immovable objects: we may need to think about how the robot acts when it hits a side... maybe the robot movement should translate to "slide" on the object if it's not driving straight in? or we have to improve how much the ai uses it's physics to determine where to go: rather than waiting to see if it can move, it should use physics to determine if it can move and where - also, the ai could use the field dimensions to know where it is and how to move around the field
 - [x] robots should not be able to move over each other: they should bump into each other and have to go around
+- [x] **Hub Penalty Display**: Implemented separate tracking for penalty points. Opponent fouls appear as "(+15 Foul)" above the alliance score in the HUD. Headless runner also reports these stats.
+- [x] **AI Avoidance Fix**: Discovered and fixed a bug where physical fuel collection was ignoring the `disable_intake` flag from the AI. This significantly reduced "fire zone" fouls.
+- [x] **Headless Performance**: Optimization to remove collected fuel from the pieces list improved simulation speed.
 - [x] fuel bounces off the intake a lot... often a robot is chasing a fuel that hits directly on it's intake. If a fuel has a direct hit on th intake it should be caught. We could in the future adjust this somehow with a confi (how successful an intake is in % chance of capture)
-- [ ] robots are not allowed to collect fuel from the hub before it bounces to the floor. if they do, it's a major penalty 15 pts. Can we somehow implement this? the ai should avoid it (we don't want to prevent it physically because we may do ml later)
-- [ ] the team that scores the most during auto period is the one that goes second so if red wins in auto, then then get their hub active in stage 2.
+- [x] robots are not allowed to collect fuel from the hub before it bounces to the floor. if they do, it's a major penalty 15 pts. (Implemented with 0.5s floor-hit timer and AI avoidance)
+- [x] the team that scores the most during auto period is the one that goes second so if red wins in auto, then then get their hub active in stage 2.
+- [x] Move Reset key from 'R' to '7' (to avoid accidental red-control hits)
+- [x] Add on-screen "Return to Menu" button when match ends
+- [x] Outpost dump time configurable in config.json
+- [x] Robot Feature: Pass vs Ferry (Ferry robots drive fuel to alliance zone and dump in one burst)

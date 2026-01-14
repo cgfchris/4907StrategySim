@@ -14,6 +14,7 @@ class Fuel:
         self.vel_y = 0
         self.immune_timer = 0 # Brief period where it can't be collected
         self.bounces = 0 # Track bounces for Hub Penalty
+        self.airborne_timer = 0.5 if source == "recycled" else 0
         
     def draw(self, screen, ppi):
         if not self.collected:
@@ -25,10 +26,22 @@ class GamePieceManager:
         self.fuels = []
         self.outpost_released = False
         self.penalties = [] # List of (alliance, amount)
+        self.dump_queue = []
         
         # Physics Params (Tuneable)
-        self.bounciness = config.get('physics', {}).get('bounciness', 0.8)
-        self.friction = config.get('physics', {}).get('friction', 0.97)
+        self.bounciness = config['physics']['bounciness']
+        self.friction = config['physics']['friction']
+        
+        # Performance: Spatial Partitioning
+        self.grid_size = config['field'].get('spatial_grid_size', [6, 3])
+        self.grid = {} # (gx, gy) -> list of fuel
+        self.field_w = config['field']['width_inches']
+        self.field_h = config['field']['length_inches']
+        self.cell_w = self.field_w / self.grid_size[0]
+        self.cell_h = self.field_h / self.grid_size[1]
+        
+        # AI Awareness: Global Densities
+        self.grid_counts = {} # (gx, gy) -> fuel count
         
         self.spawn_initial(config)
         
@@ -65,7 +78,7 @@ class GamePieceManager:
         for r in range(rows):
             for c in range(cols):
                 f = Fuel(start_x + c*spacing_x + spacing_x/2, start_y + r*spacing_y + spacing_y/2, self.ppi, "scatter")
-                f.bounces = 1 # Initial field fuel starts as "bounced"
+                f.bounces = 1 # Field starts safe
                 self.fuels.append(f)
             
     def recycle_fuel(self, robot, config):
@@ -74,7 +87,7 @@ class GamePieceManager:
         hub_y = config['length_inches'] / 2
         
         new_fuel = Fuel(hub_x, hub_y, self.ppi, "recycled")
-        new_fuel.immune_timer = 0.3
+        new_fuel.immune_timer = 0 # Allowed to catch, but penalized!
         direction = 1 if hub_x < field_w/2 else -1
         angle = random.uniform(-0.6, 0.6) 
         vel = random.uniform(80, 120) * self.bounciness
@@ -110,11 +123,12 @@ class GamePieceManager:
             
         new_fuel.vel_x = (dx / dist) * base_vel
         new_fuel.vel_y = (dy / dist) * base_vel
+        new_fuel.bounces = 1
         self.fuels.append(new_fuel)
 
     def release_outpost(self, config):
         if not self.outpost_released:
-            field_w, field_h = config['width_inches'], config['length_inches']
+            field_w, field_h = config['field']['width_inches'], config['field']['length_inches']
             # Red outpost: Bottom-Left
             for _ in range(24):
                 f = Fuel(10, field_h - 10, self.ppi, "outpost")
@@ -123,29 +137,67 @@ class GamePieceManager:
                 vel = random.uniform(70, 110) * self.bounciness
                 f.vel_x = math.cos(angle) * vel
                 f.vel_y = -math.sin(angle) * vel
+                f.bounces = 1
                 self.fuels.append(f)
             # Blue outpost: Top-Right
             for _ in range(24):
-                f = Fuel(field_w - 10, 10, self.ppi, "outpost")
+                f = Fuel(config['field']['width_inches'] - 10, 10, self.ppi, "outpost")
                 f.immune_timer = 0.5
                 angle = random.uniform(3.2, 4.6)
                 vel = random.uniform(70, 110) * self.bounciness
                 f.vel_x = math.cos(angle) * vel
                 f.vel_y = -math.sin(angle) * vel
+                f.bounces = 1
                 self.fuels.append(f)
             self.outpost_released = True
+    
+    def spawn_dump(self, x, y):
+        self.dump_queue.append((x, y))
             
     def update(self, robots, game_time, config):
         dt = 1/60 
-        if game_time > 30 and not self.outpost_released:
+        dump_time = config['field'].get('outpost_dump_time', 30.0)
+        if game_time > dump_time and not self.outpost_released:
             self.release_outpost(config)
+
+        # Handle Dump Queue
+        while self.dump_queue:
+            x, y = self.dump_queue.pop(0)
+            f = Fuel(x, y, self.ppi, "dump")
+            f.immune_timer = 2.0 # Don't re-collect immediately
+            # Small random kick
+            angle = random.uniform(0, 2 * math.pi)
+            vel = random.uniform(20, 40)
+            f.vel_x = math.cos(angle) * vel
+            f.vel_y = math.sin(angle) * vel
+            f.bounces = 1
+            self.fuels.append(f)
 
         self.penalties = [] # Clear penalties each frame (or handle them in main)
 
+        # Clear/Rebuild Grid for this frame
+        self.grid = {}
+        for gx in range(self.grid_size[0]):
+            for gy in range(self.grid_size[1]):
+                self.grid[(gx, gy)] = []
+        self.grid_counts = {k: 0 for k in self.grid.keys()}
+
         for fuel in self.fuels:
             if not fuel.collected:
+                # Assign to Grid Cell
+                gx = min(self.grid_size[0] - 1, max(0, int(fuel.x / self.cell_w)))
+                gy = min(self.grid_size[1] - 1, max(0, int(fuel.y / self.cell_h)))
+                self.grid[(gx, gy)].append(fuel)
+                self.grid_counts[(gx, gy)] += 1
+
+                if fuel.immune_timer > 0:
                 if fuel.immune_timer > 0:
                     fuel.immune_timer -= dt
+                
+                if fuel.bounces == 0 and fuel.airborne_timer > 0:
+                    fuel.airborne_timer -= dt
+                    if fuel.airborne_timer <= 0:
+                        fuel.bounces = 1 # "Hit the floor"
 
                 if abs(fuel.vel_x) > 0.1 or abs(fuel.vel_y) > 0.1:
                     fuel.x += fuel.vel_x * dt
@@ -160,29 +212,43 @@ class GamePieceManager:
                         fuel.vel_x = abs(fuel.vel_x) * self.bounciness
                         fuel.x = 5
                         fuel.bounces += 1
-                    if fuel.x > config['width_inches']-5: 
+                    if fuel.x > config['field']['width_inches']-5: 
                         fuel.vel_x = -abs(fuel.vel_x) * self.bounciness
-                        fuel.x = config['width_inches']-5
+                        fuel.x = config['field']['width_inches']-5
                         fuel.bounces += 1
                     if fuel.y < 5: 
                         fuel.vel_y = abs(fuel.vel_y) * self.bounciness
                         fuel.y = 5
                         fuel.bounces += 1
-                    if fuel.y > config['length_inches']-5: 
+                    if fuel.y > config['field']['length_inches']-5: 
                         fuel.vel_y = -abs(fuel.vel_y) * self.bounciness
-                        fuel.y = config['length_inches']-5
+                        fuel.y = config['field']['length_inches']-5
                         fuel.bounces += 1
 
-                # Important: skip collection if immune
-                if fuel.immune_timer > 0:
-                    continue
-
-                for robot in robots:
-                    collection_range = max(robot.length, robot.width)/2 + 5
-                    dx, dy = fuel.x - robot.x, fuel.y - robot.y
-                    dist = (dx**2 + dy**2)**0.5
-                    
-                    if dist < collection_range:
+                # SPATIAL PARTITIONING: Only check local grid cells
+                gx_robot = int(robot.x / self.cell_w)
+                gy_robot = int(robot.y / self.cell_h)
+                
+                check_cells = []
+                for dx_g in [-1, 0, 1]:
+                    for dy_g in [-1, 0, 1]:
+                        cell = (gx_robot + dx_g, gy_robot + dy_g)
+                        if cell in self.grid:
+                            check_cells.append(self.grid[cell])
+                
+                collection_range = max(robot.length, robot.width)/2 + 5
+                range_sq = collection_range**2
+                
+                for cell_list in check_cells:
+                    for fuel in cell_list:
+                        if fuel.collected or fuel.immune_timer > 0: continue
+                        
+                        dx, dy = fuel.x - robot.x, fuel.y - robot.y
+                        dist_sq = dx**2 + dy**2
+                        
+                        if dist_sq < range_sq:
+                            dist = dist_sq**0.5 # Needed for local coordinate rotation calculation
+                            # Convert to Robot-Local Coordinates
                         # Convert to Robot-Local Coordinates
                         rad = math.radians(robot.angle)
                         cos_a = math.cos(rad)
@@ -217,12 +283,13 @@ class GamePieceManager:
                         if collected and random.random() > robot.intake_success_rate:
                             collected = False
 
-                        if collected and robot.holding < robot.capacity and robot.intake_transition_timer <= 0:
+                        if collected and robot.holding < robot.capacity and robot.intake_transition_timer <= 0 and not getattr(robot, 'disable_intake', False):
                             fuel.collected = True
                             robot.holding += 1
                             
                             if fuel.bounces == 0:
                                 self.penalties.append((robot.alliance, 15))
+                                robot.penalty_timer = 2.0
                             break 
                         
                         # If not collected, check for physical collision (The "Kick")
@@ -241,6 +308,9 @@ class GamePieceManager:
                             fuel.vel_x = math.cos(angle_to_fuel) * kick_vel
                             fuel.vel_y = math.sin(angle_to_fuel) * kick_vel
                             fuel.bounces += 1
+                        
+        # Clean up collected fuel
+        self.fuels = [f for f in self.fuels if not f.collected]
                         
     def draw(self, screen):
         for fuel in self.fuels:

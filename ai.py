@@ -40,26 +40,22 @@ class RobotAI:
         alliance_fuel = self.count_alliance_fuel(pieces, field)
         
         if robot.holding >= robot.capacity:
-            if can_score:
-                self.state = "SCORE"
-            else:
-                self.state = "PASS"
+            if can_score: self.state = "SCORE"
+            elif robot.can_pass: self.state = "PASS"
+            else: self.state = "FERRY_DUMP"
         elif robot.holding == 0:
-            # If there's plenty of fuel in our zone, we should definitely stay to gather/score
-            if alliance_fuel > 5:
-                self.state = "GATHER"
-            else:
-                self.state = "GATHER" # Default
+            self.state = "GATHER"
         else:
-            # If we have some fuel, decide based on scoring permission OR zone abundance
+            # We have SOME fuel but not full
             if can_score:
                 self.state = "SCORE"
-            elif alliance_fuel > 10:
-                # If zone is packed, maybe we just wait or gather more to score later
-                # For now, let's say if we have fuel and zone is full, we should SCORE if we can
-                self.state = "SCORE" if can_score else "PASS"
             else:
-                self.state = "PASS"
+                # Can't score yet.
+                if robot.holding > 0.8 * robot.capacity:
+                    if robot.can_pass: self.state = "PASS"
+                    else: self.state = "FERRY_DUMP"
+                else:
+                    self.state = "GATHER"
 
         # Stuck detection
         dist_moved = self.get_dist(robot.x, robot.y, self.last_x, self.last_y)
@@ -114,6 +110,9 @@ class RobotAI:
                         
                         if is_targeted and random.random() < 0.7: continue
 
+                        # Skip unbounced (risky) fuel
+                        if fuel.bounces == 0: continue
+
                         # Is it in our zone?
                         in_zone = (is_red and fuel.x < field.divider_x) or (not is_red and fuel.x > (field.width_in - field.divider_x))
                         if in_zone:
@@ -134,10 +133,19 @@ class RobotAI:
                                     break
                         if is_targeted and random.random() < 0.7: continue
 
-                        dist = self.get_dist(robot.x, robot.y, fuel.x, fuel.y)
-                        if dist < min_dist:
-                            min_dist = dist
-                            nearest_fuel = fuel
+                        # Skip unbounced (risky) fuel
+                        if fuel.bounces == 0: continue
+
+                        # Is it in the neutral zone?
+                        in_neutral = field.divider_x < fuel.x < (field.width_in - field.divider_x)
+                        # OR is it in our own alliance zone?
+                        in_our_zone = (is_red and fuel.x < field.divider_x) or (not is_red and fuel.x > (field.width_in - field.divider_x))
+                        
+                        if in_neutral or in_our_zone:
+                            dist = self.get_dist(robot.x, robot.y, fuel.x, fuel.y)
+                            if dist < min_dist:
+                                min_dist = dist
+                                nearest_fuel = fuel
             
             if nearest_fuel:
                 target_x, target_y = nearest_fuel.x, nearest_fuel.y
@@ -158,18 +166,54 @@ class RobotAI:
             if robot.check_shoot_range(field) and not robot.auto_shoot_enabled:
                 inputs['shoot_toggle'] = True
         
-        elif self.state == "PASS":
-            # Target neutral zone center but facing alliance
+                if not robot.auto_pass_enabled:
+                    inputs['pass_toggle'] = True
+
+        elif self.state == "FERRY_DUMP":
             is_red = robot.alliance == "red"
-            target_x = field.width_in / 2
+            # Target a spot deep in alliance zone
+            target_x = 80 if is_red else field.width_in - 80
             target_y = field.length_in / 2
             
-            # Face toward alliance zone for passing
-            pass_target_x = 0 if is_red else field.width_in
-            desired_angle = math.degrees(math.atan2(target_y - robot.y, pass_target_x - robot.x))
+            # Are we in alliance zone?
+            in_zone = (is_red and robot.x < field.divider_x) or (not is_red and robot.x > (field.width_in - field.divider_x))
             
-            if not robot.auto_pass_enabled:
-                inputs['pass_toggle'] = True
+            if in_zone:
+                inputs['disable_intake'] = True
+                
+                dist = self.get_dist(robot.x, robot.y, target_x, target_y)
+                if dist < 20: # Close enough to dump spot
+                    inputs['dump_toggle'] = True
+                
+                if robot.holding == 0:
+                    self.state = "GATHER"
+            
+            desired_angle = math.degrees(math.atan2(target_y - robot.y, target_x - robot.x))
+
+        # --- Hub Avoidance Skirting (Applied to ALL states) ---
+        danger_radius = 95
+        for hub in field.hubs:
+            hub_dist = self.get_dist(robot.x, robot.y, hub['x'], hub['y'])
+            if hub_dist < danger_radius:
+                # 1. Intake Protection:
+                # If we are too close and not explicitly targeting a ball (or targeting one too risky)
+                targeting_safe_ball = False
+                if self.state == "GATHER" and nearest_fuel:
+                    if self.get_dist(nearest_fuel.x, nearest_fuel.y, hub['x'], hub['y']) < 40 and nearest_fuel.bounces > 0:
+                         targeting_safe_ball = True
+                
+                if not targeting_safe_ball:
+                    inputs['disable_intake'] = True
+                
+                # 2. Skirting Logic:
+                # nudge the target y to move around the hub
+                current_target_dist = self.get_dist(target_x, target_y, hub['x'], hub['y'])
+                # If target is on the other side of the hub, nudge our path
+                if current_target_dist > hub_dist:
+                    offset = 75
+                    if robot.y < hub['y']: target_y = hub['y'] - offset
+                    else: target_y = hub['y'] + offset
+                    desired_angle = math.degrees(math.atan2(target_y - robot.y, target_x - robot.x))
 
         # Steering Logic
         # 1. Rotation

@@ -36,6 +36,7 @@ class Robot:
         self.drivetrain = config.get('drivetrain', 'swerve') # 'swerve' or 'tank'
         self.intake_type = config.get('intake_type', 'dual') # 'dual' or 'single'
         self.intake_success_rate = config.get('intake_success_rate', 1.0)
+        self.can_pass = config.get('can_pass', True)
         
         # Alliance
         self.alliance = alliance 
@@ -45,6 +46,7 @@ class Robot:
         self.intake_transition_time = 0.5
         
         self.color = (180, 50, 50) if alliance == "red" else (50, 50, 180)
+        self.penalty_timer = 0
         
     def check_shoot_range(self, field):
         target_hub = field.hubs[0] if self.alliance == "red" else field.hubs[1]
@@ -69,7 +71,7 @@ class Robot:
 
     def auto_pass(self, current_time, field, pieces):
         in_neutral = field.divider_x < self.x < (field.width_in - field.divider_x)
-        if not in_neutral or self.holding == 0:
+        if not in_neutral or self.holding == 0 or not self.can_pass:
             return
 
         if (current_time - self.last_shot_time) >= (1.0 / self.shoot_rate):
@@ -95,6 +97,15 @@ class Robot:
             self.holding -= 1
             self.last_shot_time = current_time
             pieces.pass_fuel(self.x, self.y, target_x, target_y, is_blocked, needed_mag)
+
+    def dump(self, current_time, pieces):
+        # Empty the whole hopper!
+        if self.holding > 0:
+            num_dumped = self.holding
+            self.holding = 0
+            self.last_shot_time = current_time
+            return num_dumped
+        return 0
         
     def update(self, dt, keys, controls, field, current_time, robots, pieces=None, can_score=True, ai_inputs=None):
         target_vel_x_robot = 0
@@ -153,7 +164,16 @@ class Robot:
             # AI Toggles (optional, usually AI manages state directly)
             if ai_inputs.get('shoot_toggle'): self.auto_shoot_enabled = not self.auto_shoot_enabled
             if ai_inputs.get('pass_toggle'): self.auto_pass_enabled = not self.auto_pass_enabled
+            
+            if ai_inputs.get('dump_toggle') and pieces:
+                num_dumped = self.dump(current_time, pieces)
+                for _ in range(num_dumped):
+                    pieces.spawn_dump(self.x, self.y)
+            
+            # Intake Disable Control
+            self.disable_intake = ai_inputs.get('disable_intake', False)
         else:
+            self.disable_intake = False
             if keys[controls['rotate_l']]: self.rot_velocity = -self.rotation_speed
             elif keys[controls['rotate_r']]: self.rot_velocity = self.rotation_speed
             else: self.rot_velocity = 0
@@ -236,6 +256,9 @@ class Robot:
         
         if self.intake_transition_timer > 0:
             self.intake_transition_timer -= dt
+        
+        if self.penalty_timer > 0:
+            self.penalty_timer -= dt
             
         return scored
 
@@ -244,6 +267,16 @@ class Robot:
         surf = pygame.Surface((w, h), pygame.SRCALPHA)
         pygame.draw.rect(surf, self.color, (0, 0, w, h), border_radius=3)
         pygame.draw.rect(surf, (200, 200, 200), (0, 0, w, h), 2, border_radius=3) 
+        
+        if self.penalty_timer > 0:
+            # Draw a bright red outline and text
+            pygame.draw.rect(surf, (255, 0, 0), (0, 0, w, h), 4, border_radius=3)
+            foul_text = font.render("MAJOR FOUL", True, (255, 0, 0))
+            # Draw above robot - need to draw on main screen though
+            # Let's draw it on the surf for now, but it might be too small
+            # Actually, let's just make the robot flash bright red
+            if int(self.penalty_timer * 10) % 2 == 0:
+                pygame.draw.rect(surf, (255, 255, 255), (0, 0, w, h), border_radius=3)
         
         # Draw Intake(s)
         if self.intake_transition_timer <= 0:
