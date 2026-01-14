@@ -48,3 +48,4 @@
 - [x] Add on-screen "Return to Menu" button when match ends
 - [x] Outpost dump time configurable in config.json
 - [x] Robot Feature: Pass vs Ferry (Ferry robots drive fuel to alliance zone and dump in one burst)
+- [x] Hub penalty value configurable in config.json

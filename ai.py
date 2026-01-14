@@ -16,11 +16,24 @@ class RobotAI:
         return ((x1 - x2)**2 + (y1 - y2)**2)**0.5
 
     def count_alliance_fuel(self, pieces, field):
+        # Optimized using grid counts if available
+        if hasattr(pieces, 'grid_counts'):
+            count = 0
+            is_red = self.alliance == "red"
+            for (gx, gy), c in pieces.grid_counts.items():
+                if c == 0: continue
+                # Center of cell
+                cx = (gx + 0.5) * pieces.cell_w
+                if is_red and cx < field.divider_x:
+                    count += c
+                elif not is_red and cx > (field.width_in - field.divider_x):
+                    count += c
+            return count
+            
         count = 0
         is_red = self.alliance == "red"
         for fuel in pieces.fuels:
             if not fuel.collected:
-                # Check if in alliance zone
                 if is_red and fuel.x < field.divider_x:
                     count += 1
                 elif not is_red and fuel.x > (field.width_in - field.divider_x):
@@ -151,6 +164,10 @@ class RobotAI:
                 target_x, target_y = nearest_fuel.x, nearest_fuel.y
                 # Face the fuel
                 desired_angle = math.degrees(math.atan2(target_y - robot.y, target_x - robot.x))
+
+            # Disable auto-modes when gathering
+            if robot.auto_shoot_enabled: inputs['shoot_toggle'] = True
+            if robot.auto_pass_enabled: inputs['pass_toggle'] = True
         
         elif self.state == "SCORE":
             target_hub = field.hubs[0] if robot.alliance == "red" else field.hubs[1]
@@ -165,9 +182,23 @@ class RobotAI:
             
             if robot.check_shoot_range(field) and not robot.auto_shoot_enabled:
                 inputs['shoot_toggle'] = True
-        
-                if not robot.auto_pass_enabled:
-                    inputs['pass_toggle'] = True
+            
+            # Disable other modes
+            if robot.auto_pass_enabled:
+                inputs['pass_toggle'] = True
+
+        elif self.state == "PASS":
+            # Target center of field to wait for passing
+            target_x = field.width_in / 2
+            target_y = field.length_in / 2
+            desired_angle = 0 if robot.alliance == "red" else 180
+            
+            if not robot.auto_pass_enabled:
+                inputs['pass_toggle'] = True
+            
+            # Disable other modes
+            if robot.auto_shoot_enabled:
+                inputs['shoot_toggle'] = True
 
         elif self.state == "FERRY_DUMP":
             is_red = robot.alliance == "red"

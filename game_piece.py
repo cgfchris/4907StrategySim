@@ -157,6 +157,8 @@ class GamePieceManager:
     def update(self, robots, game_time, config):
         dt = 1/60 
         dump_time = config['field'].get('outpost_dump_time', 30.0)
+        p_val = config['field'].get('hub_penalty_value', 5)
+        
         if game_time > dump_time and not self.outpost_released:
             self.release_outpost(config)
 
@@ -175,140 +177,104 @@ class GamePieceManager:
 
         self.penalties = [] # Clear penalties each frame (or handle them in main)
 
-        # Clear/Rebuild Grid for this frame
-        self.grid = {}
-        for gx in range(self.grid_size[0]):
-            for gy in range(self.grid_size[1]):
-                self.grid[(gx, gy)] = []
+        # 1. Clear/Rebuild Grid and Update Fuel Physics
+        self.grid = {(gx, gy): [] for gx in range(self.grid_size[0]) for gy in range(self.grid_size[1])}
         self.grid_counts = {k: 0 for k in self.grid.keys()}
 
         for fuel in self.fuels:
-            if not fuel.collected:
-                # Assign to Grid Cell
-                gx = min(self.grid_size[0] - 1, max(0, int(fuel.x / self.cell_w)))
-                gy = min(self.grid_size[1] - 1, max(0, int(fuel.y / self.cell_h)))
-                self.grid[(gx, gy)].append(fuel)
-                self.grid_counts[(gx, gy)] += 1
+            if fuel.collected: continue
+            
+            # Physics/Timers
+            if fuel.immune_timer > 0:
+                fuel.immune_timer -= dt
+            
+            if fuel.bounces == 0 and fuel.airborne_timer > 0:
+                fuel.airborne_timer -= dt
+                if fuel.airborne_timer <= 0:
+                    fuel.bounces = 1 
 
-                if fuel.immune_timer > 0:
-                    fuel.immune_timer -= dt
+            if abs(fuel.vel_x) > 0.1 or abs(fuel.vel_y) > 0.1:
+                fuel.x += fuel.vel_x * dt
+                fuel.y += fuel.vel_y * dt
+                fuel.vel_x *= self.friction
+                fuel.vel_y *= self.friction
                 
-                if fuel.bounces == 0 and fuel.airborne_timer > 0:
-                    fuel.airborne_timer -= dt
-                    if fuel.airborne_timer <= 0:
-                        fuel.bounces = 1 # "Hit the floor"
+                if abs(fuel.vel_x) < 1.0: fuel.vel_x = 0
+                if abs(fuel.vel_y) < 1.0: fuel.vel_y = 0
+                
+                fw, fh = config['field']['width_inches'], config['field']['length_inches']
+                if fuel.x < 5: 
+                    fuel.vel_x = abs(fuel.vel_x) * self.bounciness; fuel.x = 5; fuel.bounces += 1
+                elif fuel.x > fw - 5: 
+                    fuel.vel_x = -abs(fuel.vel_x) * self.bounciness; fuel.x = fw - 5; fuel.bounces += 1
+                if fuel.y < 5: 
+                    fuel.vel_y = abs(fuel.vel_y) * self.bounciness; fuel.y = 5; fuel.bounces += 1
+                elif fuel.y > fh - 5: 
+                    fuel.vel_y = -abs(fuel.vel_y) * self.bounciness; fuel.y = fh - 5; fuel.bounces += 1
 
-                if abs(fuel.vel_x) > 0.1 or abs(fuel.vel_y) > 0.1:
-                    fuel.x += fuel.vel_x * dt
-                    fuel.y += fuel.vel_y * dt
-                    fuel.vel_x *= self.friction
-                    fuel.vel_y *= self.friction
+            # Populate Grid
+            gx = min(self.grid_size[0] - 1, max(0, int(fuel.x / self.cell_w)))
+            gy = min(self.grid_size[1] - 1, max(0, int(fuel.y / self.cell_h)))
+            self.grid[(gx, gy)].append(fuel)
+            self.grid_counts[(gx, gy)] += 1
+
+        # 2. Check Robots (Spatial Partitioning)
+        for robot in robots:
+            gx_robot = min(self.grid_size[0]-1, max(0, int(robot.x / self.cell_w)))
+            gy_robot = min(self.grid_size[1]-1, max(0, int(robot.y / self.cell_h)))
+            
+            c_range = (max(robot.length, robot.width)/2 + 5)
+            range_sq = c_range**2
+            
+            half_l, half_w = robot.length / 2, robot.width / 2
+            rad = math.radians(robot.angle)
+            cos_a, sin_a = math.cos(rad), math.sin(rad)
+
+            for dx_g in [-1, 0, 1]:
+                gx_target = gx_robot + dx_g
+                if not (0 <= gx_target < self.grid_size[0]): continue
+                for dy_g in [-1, 0, 1]:
+                    gy_target = gy_robot + dy_g
+                    if not (0 <= gy_target < self.grid_size[1]): continue
                     
-                    if abs(fuel.vel_x) < 2: fuel.vel_x = 0
-                    if abs(fuel.vel_y) < 2: fuel.vel_y = 0
-                    
-                    if fuel.x < 5: 
-                        fuel.vel_x = abs(fuel.vel_x) * self.bounciness
-                        fuel.x = 5
-                        fuel.bounces += 1
-                    if fuel.x > config['field']['width_inches']-5: 
-                        fuel.vel_x = -abs(fuel.vel_x) * self.bounciness
-                        fuel.x = config['field']['width_inches']-5
-                        fuel.bounces += 1
-                    if fuel.y < 5: 
-                        fuel.vel_y = abs(fuel.vel_y) * self.bounciness
-                        fuel.y = 5
-                        fuel.bounces += 1
-                    if fuel.y > config['field']['length_inches']-5: 
-                        fuel.vel_y = -abs(fuel.vel_y) * self.bounciness
-                        fuel.y = config['field']['length_inches']-5
-                        fuel.bounces += 1
-
-                # SPATIAL PARTITIONING: Only check local grid cells
-                gx_robot = int(robot.x / self.cell_w)
-                gy_robot = int(robot.y / self.cell_h)
-                
-                check_cells = []
-                for dx_g in [-1, 0, 1]:
-                    for dy_g in [-1, 0, 1]:
-                        cell = (gx_robot + dx_g, gy_robot + dy_g)
-                        if cell in self.grid:
-                            check_cells.append(self.grid[cell])
-                
-                collection_range = max(robot.length, robot.width)/2 + 5
-                range_sq = collection_range**2
-                
-                for cell_list in check_cells:
-                    for fuel in cell_list:
-                        if fuel.collected or fuel.immune_timer > 0: continue
-                        
+                    for fuel in self.grid[(gx_target, gy_target)]:
+                        if fuel.collected: continue
                         dx, dy = fuel.x - robot.x, fuel.y - robot.y
                         dist_sq = dx**2 + dy**2
-                        
                         if dist_sq < range_sq:
-                            dist = dist_sq**0.5 # Needed for local coordinate rotation calculation
-                            # Convert to Robot-Local Coordinates
-                        # Convert to Robot-Local Coordinates
-                        rad = math.radians(robot.angle)
-                        cos_a = math.cos(rad)
-                        sin_a = math.sin(rad)
-                        
-                        # Local X is forward/backward, Local Y is side-to-side
-                        local_x = (dx * cos_a + dy * sin_a)
-                        local_y = (-dx * sin_a + dy * cos_a)
-                        
-                        # Collection Hit-Box logic
-                        # Intake is at robot.length/2 (front) or -robot.length/2 (back)
-                        # We define a 'mouth' that is 5 inches deep
-                        collected = False
-                        
-                        half_l = robot.length / 2
-                        half_w = robot.width / 2
-                        
-                        # Side boundaries: slightly WIDER than robot to feel "sticky"
-                        if abs(local_y) < (half_w + 1): 
-                            if robot.intake_type == "dual":
-                                # Depth check: half_l - 8 (deep inside) < local_x < half_l + 5 (in front of robot)
-                                if robot.intake_deploy_side == "front" and (half_l - 8 < local_x < half_l + 5):
-                                    collected = True
-                                elif robot.intake_deploy_side == "back" and (-half_l - 5 < local_x < -half_l + 8):
-                                    collected = True
-                            else:
-                                # Single Intake: Front ONLY
-                                if half_l - 8 < local_x < half_l + 5:
-                                    collected = True
-
-                        # Success Rate check
-                        if collected and random.random() > robot.intake_success_rate:
+                            local_x = (dx * cos_a + dy * sin_a)
+                            local_y = (-dx * sin_a + dy * cos_a)
                             collected = False
-
-                        if collected and robot.holding < robot.capacity and robot.intake_transition_timer <= 0 and not getattr(robot, 'disable_intake', False):
-                            fuel.collected = True
-                            robot.holding += 1
-                            
-                            if fuel.bounces == 0:
-                                self.penalties.append((robot.alliance, 15))
-                                robot.penalty_timer = 2.0
-                            break 
+                            if abs(local_y) < (half_w + 1): 
+                                if robot.intake_type == "dual":
+                                    if robot.intake_deploy_side == "front" and (half_l - 8 < local_x < half_l + 5):
+                                        collected = True
+                                    elif robot.intake_deploy_side == "back" and (-half_l - 5 < local_x < -half_l + 8):
+                                        collected = True
+                                elif half_l - 8 < local_x < half_l + 5: # single
+                                    collected = True
+                            if collected and random.random() > robot.intake_success_rate:
+                                collected = False
+                            if collected and robot.holding < robot.capacity and robot.intake_transition_timer <= 0 and not getattr(robot, 'disable_intake', False):
+                                fuel.collected = True
+                                robot.holding += 1
+                                if fuel.bounces == 0:
+                                    self.penalties.append((robot.alliance, p_val))
+                                    robot.penalty_timer = 2.0
+                                continue 
+                            col_dist = min(half_l, half_w) + 2
+                            if dist_sq < (col_dist + 2)**2:
+                                dist = dist_sq**0.5
+                                overlap = (col_dist + 2) - dist
+                                angle_to_fuel = math.atan2(dy, dx)
+                                fuel.x += math.cos(angle_to_fuel) * (overlap + 1)
+                                fuel.y += math.sin(angle_to_fuel) * (overlap + 1)
+                                r_vel_mag = (robot.vel_x_robot**2 + robot.vel_y_robot**2)**0.5
+                                kick_vel = 50 * self.bounciness + (r_vel_mag * 0.8)
+                                fuel.vel_x = math.cos(angle_to_fuel) * kick_vel
+                                fuel.vel_y = math.sin(angle_to_fuel) * kick_vel
+                                fuel.bounces += 1
                         
-                        # If not collected, check for physical collision (The "Kick")
-                        # This triggers if we strike any part of the robot
-                        collision_dist = min(half_l, half_w) + 2
-                        if dist < collision_dist + 2:
-                            overlap = (collision_dist + 2) - dist
-                            push_mag = overlap + 1
-                            angle_to_fuel = math.atan2(dy, dx)
-                            fuel.x += math.cos(angle_to_fuel) * push_mag
-                            fuel.y += math.sin(angle_to_fuel) * push_mag
-                            
-                            robot_vel_mag = (robot.vel_x_robot**2 + robot.vel_y_robot**2)**0.5
-                            kick_vel = 50 * self.bounciness + (robot_vel_mag * 0.8)
-                            
-                            fuel.vel_x = math.cos(angle_to_fuel) * kick_vel
-                            fuel.vel_y = math.sin(angle_to_fuel) * kick_vel
-                            fuel.bounces += 1
-                        
-        # Clean up collected fuel
         self.fuels = [f for f in self.fuels if not f.collected]
                         
     def draw(self, screen):

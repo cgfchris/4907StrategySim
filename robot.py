@@ -47,6 +47,9 @@ class Robot:
         
         self.color = (180, 50, 50) if alliance == "red" else (50, 50, 180)
         self.penalty_timer = 0
+        self.ai_update_rate = config.get('ai_update_rate', 30)
+        self.ai_tick_timer = random.uniform(0, 1.0/self.ai_update_rate) # Desync robots
+        self.last_ai_inputs = None
         
     def check_shoot_range(self, field):
         target_hub = field.hubs[0] if self.alliance == "red" else field.hubs[1]
@@ -107,7 +110,20 @@ class Robot:
             return num_dumped
         return 0
         
+    def should_update_ai(self, dt):
+        self.ai_tick_timer += dt
+        if self.ai_update_rate > 0 and self.ai_tick_timer >= (1.0 / self.ai_update_rate):
+            self.ai_tick_timer = 0
+            return True
+        return False
+        
     def update(self, dt, keys, controls, field, current_time, robots, pieces=None, can_score=True, ai_inputs=None):
+        # AI Update (Configurable Rate) - Note: Now managed in main/headless to avoid redundant ai.update() calls
+        if ai_inputs:
+            self.last_ai_inputs = ai_inputs
+        else:
+            ai_inputs = self.last_ai_inputs
+        
         target_vel_x_robot = 0
         target_vel_y_robot = 0
         
@@ -161,17 +177,29 @@ class Robot:
         if ai_inputs:
             self.rot_velocity = ai_inputs.get('rot', 0) * self.rotation_speed
             
-            # AI Toggles (optional, usually AI manages state directly)
-            if ai_inputs.get('shoot_toggle'): self.auto_shoot_enabled = not self.auto_shoot_enabled
-            if ai_inputs.get('pass_toggle'): self.auto_pass_enabled = not self.auto_pass_enabled
+            # AI Toggles 
+            if ai_inputs.get('shoot_toggle'): 
+                self.auto_shoot_enabled = not self.auto_shoot_enabled
+                ai_inputs['shoot_toggle'] = False
+            if ai_inputs.get('pass_toggle'): 
+                self.auto_pass_enabled = not self.auto_pass_enabled
+                ai_inputs['pass_toggle'] = False
             
-            if ai_inputs.get('dump_toggle') and pieces:
-                num_dumped = self.dump(current_time, pieces)
-                for _ in range(num_dumped):
-                    pieces.spawn_dump(self.x, self.y)
+            if ai_inputs.get('dump_toggle'):
+                if pieces:
+                    num_dumped = self.dump(current_time, pieces)
+                    for _ in range(num_dumped):
+                        pieces.spawn_dump(self.x, self.y)
+                ai_inputs['dump_toggle'] = False
             
             # Intake Disable Control
             self.disable_intake = ai_inputs.get('disable_intake', False)
+        elif self.last_ai_inputs:
+             # Maintain state from last AI update on throttled frames
+             self.rot_velocity = self.last_ai_inputs.get('rot', 0) * self.rotation_speed
+             # Pulse toggles should probably ONLY happen on the tick they are sent, 
+             # but persistent states like disable_intake should stay.
+             self.disable_intake = self.last_ai_inputs.get('disable_intake', False)
         else:
             self.disable_intake = False
             if keys[controls['rotate_l']]: self.rot_velocity = -self.rotation_speed
@@ -223,10 +251,16 @@ class Robot:
             for wall in field.colliders:
                 if rect.colliderect(wall): return True
             for hub in field.hubs:
-                dist = ((nx - hub['x'])**2 + (ny - hub['y'])**2)**0.5
-                if dist < (hub['r'] + min(self.width, self.length)/2 - 1): return True
+                dx, dy = nx - hub['x'], ny - hub['y']
+                dist_sq = dx**2 + dy**2
+                thresh = (hub['r'] + min(self.width, self.length)/2 - 1)
+                if dist_sq < thresh**2: return True
             for other in robots:
                 if other == self: continue
+                # Broad-phase AABB test
+                if abs(nx - other.x) > (self.length + other.length)/2 + 2: continue
+                if abs(ny - other.y) > (self.width + other.width)/2 + 2: continue
+                
                 other_rect = pygame.Rect(other.x - other.length/2, other.y - other.width/2, other.length, other.width)
                 if rect.colliderect(other_rect): return True
             return False

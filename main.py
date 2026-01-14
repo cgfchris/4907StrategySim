@@ -204,7 +204,10 @@ def main():
                 
                 ai_inputs = None
                 if robot in robot_ais:
-                    ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots)
+                    if robot.should_update_ai(dt):
+                        ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots)
+                    else:
+                        ai_inputs = robot.last_ai_inputs
                 
                 if robot.update(dt, keys, ctrl, field, game_time, robots, pieces, can_score, ai_inputs):
                     if can_score:
