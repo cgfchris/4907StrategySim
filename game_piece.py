@@ -191,7 +191,6 @@ class GamePieceManager:
                 self.grid_counts[(gx, gy)] += 1
 
                 if fuel.immune_timer > 0:
-                if fuel.immune_timer > 0:
                     fuel.immune_timer -= dt
                 
                 if fuel.bounces == 0 and fuel.airborne_timer > 0:
