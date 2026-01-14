@@ -204,10 +204,7 @@ def main():
                 
                 ai_inputs = None
                 if robot in robot_ais:
-                    if robot.should_update_ai(dt):
-                        ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots)
-                    else:
-                        ai_inputs = robot.last_ai_inputs
+                    ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots)
                 
                 if robot.update(dt, keys, ctrl, field, game_time, robots, pieces, can_score, ai_inputs):
                     if can_score:
@@ -283,7 +280,7 @@ def main():
 
         # Scores (Positioned to the left to avoid status overlap)
         # Scores
-        score_x_anchor = 320
+        score_x_anchor = 250
         # Red HUD
         red_total = scores['red'] + penalty_scores['red']
         red_main = huge_font.render(f"RED: {red_total}", True, (255, 50, 50))
@@ -295,8 +292,8 @@ def main():
         blue_total = scores['blue'] + penalty_scores['blue']
         blue_main = huge_font.render(f"BLUE: {blue_total}", True, (50, 150, 255))
         blue_foul = font.render(f"(+{penalty_scores['blue']} Foul)", True, (150, 200, 255))
-        screen.blit(blue_foul, (score_x_anchor + 250, 10))
-        screen.blit(blue_main, (score_x_anchor + 250, 30))
+        screen.blit(blue_foul, (score_x_anchor + 220, 10))
+        screen.blit(blue_main, (score_x_anchor + 220, 30))
         
         # Robot Status / Controls (Alliance Summaries)
         red_main = next((r for r in robots if r.alliance == "red"), None)
@@ -306,13 +303,13 @@ def main():
             r_shoot = "ON" if red_main.auto_shoot_enabled else "OFF"
             r_pass = "ON" if red_main.auto_pass_enabled else "OFF"
             team_label = "RED Team (3 Bots)" if match_mode == "3v3" else "RED Robot (1v1)"
-            screen.blit(font.render(f"{team_label} S={r_shoot} P={r_pass}", True, (255, 150, 150)), (field_width - 350, 10))
+            screen.blit(font.render(f"{team_label} S={r_shoot} P={r_pass}", True, (255, 150, 150)), (field_width - 250, 10))
             
         if blue_main:
             b_shoot = "ON" if blue_main.auto_shoot_enabled else "OFF"
             b_pass = "ON" if blue_main.auto_pass_enabled else "OFF"
             team_label = "BLUE Team (3 Bots)" if match_mode == "3v3" else "BLUE Robot (1v1)"
-            screen.blit(font.render(f"{team_label} S={b_shoot} P={b_pass}", True, (150, 150, 255)), (field_width - 350, 35))
+            screen.blit(font.render(f"{team_label} S={b_shoot} P={b_pass}", True, (150, 150, 255)), (field_width - 250, 35))
         
         # Tuning Panel
         pygame.draw.rect(screen, (30, 30, 30), (20, 65, 450, 25), border_radius=5)

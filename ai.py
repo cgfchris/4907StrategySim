@@ -171,11 +171,14 @@ class RobotAI:
         
         elif self.state == "SCORE":
             target_hub = field.hubs[0] if robot.alliance == "red" else field.hubs[1]
-            target_x, target_y = target_hub['x'], target_hub['y']
+            
+            # Target a spot INSIDE the alliance zone to guarantee legal shooting
+            target_x = (target_hub['x'] - 50) if robot.alliance == "red" else (target_hub['x'] + 50)
+            target_y = target_hub['y']
             
             dist = self.get_dist(robot.x, robot.y, target_x, target_y)
-            if dist < 120: # Stay a bit away from hub to score
-                target_x, target_y = robot.x, robot.y # Stop moving
+            if dist < 20: 
+                target_x, target_y = robot.x, robot.y # Stop at the firing line
             
             # Face the hub
             desired_angle = math.degrees(math.atan2(target_y - robot.y, target_x - robot.x))
