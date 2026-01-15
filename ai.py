@@ -59,21 +59,29 @@ class RobotAI:
     def update(self, robot, field, pieces, can_score, other_robots=[], game_time=0, match_duration=160, sim_config=None):
         # 1. Try ML Prediction if model exists
         if self.model and sim_config:
-            from ml_utils import get_observation
-            obs = get_observation(robot, field, pieces, sim_config, game_time, match_duration)
-            action, _states = self.model.predict(obs, deterministic=True)
-            
-            # Map actions back to inputs (States)
-            return {
-                'x': action[0],
-                'y': action[1],
-                'rot': action[2],
-                'shoot_state': action[3] > 0.5,
-                'pass_state': action[4] > 0.5,
-                'dump_state': action[5] > 0.5
-            }
+            try:
+                from ml_utils import get_observation
+                # In tactical phase (30-130s), if we can't score, it's the stashing phase (off-phase)
+                is_off_phase = (30 <= game_time < 130) and not can_score
+                obs = get_observation(robot, field, pieces, sim_config, game_time, match_duration, 
+                                     can_score=can_score, can_pass=is_off_phase)
+                action, _states = self.model.predict(obs, deterministic=True)
+                
+                # Map actions back to inputs (States)
+                return {
+                    'x': action[0],
+                    'y': action[1],
+                    'rot': action[2],
+                    'shoot_state': action[3] > 0.5,
+                    'pass_state': action[4] > 0.5,
+                    'dump_state': action[5] > 0.5
+                }
+            except Exception as e:
+                print(f"\nCRITICAL ML ERROR: {e}")
+                print("Robot is DISABLED to prevent silent heuristic fallback.\n")
+                return {'x': 0, 'y': 0, 'rot': 0}
 
-        # 2. Heuristic Logic (Fallback)
+        # 2. Heuristic Logic (Only runs if no model was ever loaded)
         # State Transitions
         alliance_fuel = self.count_alliance_fuel(pieces, field)
         

@@ -75,7 +75,7 @@ class Robot:
     def auto_pass(self, current_time, field, pieces):
         in_neutral = field.divider_x < self.x < (field.width_in - field.divider_x)
         if not in_neutral or self.holding == 0 or not self.can_pass:
-            return
+            return 0
 
         if (current_time - self.last_shot_time) >= (1.0 / self.shoot_rate):
             is_red = self.alliance == "red"
@@ -100,6 +100,8 @@ class Robot:
             self.holding -= 1
             self.last_shot_time = current_time
             pieces.pass_fuel(self.x, self.y, target_x, target_y, is_blocked, needed_mag)
+            return 1
+        return 0
 
     def dump(self, current_time, pieces):
         # Empty the whole hopper!
@@ -232,8 +234,9 @@ class Robot:
             if self.launch(current_time, field):
                 scored = True
         
+        passed_count = 0
         if self.auto_pass_enabled and self.holding > 0 and pieces:
-            self.auto_pass(current_time, field, pieces)
+            passed_count = self.auto_pass(current_time, field, pieces)
 
         # Collision with Dividers
         speed_factor = 1.0
@@ -315,8 +318,8 @@ class Robot:
             self.penalty_timer -= dt
             
         if num_dumped > 0:
-            return num_dumped
-        return scored
+            return {'scored': 0, 'dumped': num_dumped, 'passed': 0}
+        return {'scored': 1 if scored else 0, 'dumped': 0, 'passed': passed_count}
 
     def draw(self, screen, ppi, font):
         w, h = self.length * ppi, self.width * ppi

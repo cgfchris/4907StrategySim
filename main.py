@@ -72,12 +72,25 @@ def main():
         match_mode = "1v1"
         sim_state = "PLAYING"
         
-        # Find latest model
+        # Find latest/best model
         model_dir = "ml_models"
-        files = glob.glob(os.path.join(model_dir, "*.zip"))
-        if files:
-            latest_model = max(files, key=os.path.getmtime)
-            print(f"Testing latest model: {latest_model}")
+        # Search recursively for all .zip files
+        all_models = glob.glob(os.path.join(model_dir, "**", "*.zip"), recursive=True)
+        
+        if all_models:
+            # Prioritize 'best_model.zip' if it exists in the subfolder of the most recent run
+            # First, filter for only 'best_model.zip' files
+            best_models = [f for f in all_models if os.path.basename(f) == "best_model.zip"]
+            
+            if best_models:
+                # Use the 'best' model from the most recent run (by modification time of the better file)
+                latest_model = max(best_models, key=os.path.getmtime)
+                print(f"Testing the BEST discovered model: {latest_model}")
+            else:
+                # Fallback to the latest top-level checkpoint
+                latest_model = max(all_models, key=os.path.getmtime)
+                print(f"Testing the latest available model: {latest_model}")
+                
             # Inject into config temp override
             config['red_alliance'][0]['model_path'] = latest_model
             config['red_alliance'][0]['is_ai'] = True
@@ -128,8 +141,8 @@ def main():
             if b_cfg.get('is_ai'):
                 robot_ais[robot] = RobotAI("blue", b_cfg.get('drivetrain') == "tank", b_cfg.get('model_path'))
         
-        pieces.fuels = []
-        pieces.spawn_initial(config)
+        # Reset Game Pieces
+        pieces.reset(config)
     
     # Game State
     scores = {"red": 0, "blue": 0}
@@ -232,7 +245,8 @@ def main():
                 if robot in robot_ais:
                     ai_inputs = robot_ais[robot].update(robot, field, pieces, can_score, robots, game_time, 160, config)
                 
-                if robot.update(dt, keys, ctrl, field, game_time, robots, pieces, can_score, ai_inputs):
+                update_res = robot.update(dt, keys, ctrl, field, game_time, robots, pieces, can_score, ai_inputs)
+                if isinstance(update_res, dict) and update_res.get('scored'):
                     if can_score:
                         scores[robot.alliance] += 1
                         pieces.recycle_fuel(robot, config['field'])

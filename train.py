@@ -5,12 +5,36 @@ import glob
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from gym_env import FrcEnv
+
+def linear_schedule(initial_value: float):
+    def func(progress_remaining: float) -> float:
+        return progress_remaining * initial_value
+    return func
+
+class TensorboardCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super(TensorboardCallback, self).__init__(verbose)
+
+    def _on_step(self) -> bool:
+        # The Monitor wrapper adds 'episode' to info on completion
+        for info in self.locals['infos']:
+            if 'episode' in info:
+                # 'scored' is our custom metric from gym_env.py
+                scored = info.get('scored', 0)
+                self.logger.record('rollout/ep_scored', scored)
+                
+                # Log reward components (ep_rewards from gym_env)
+                for key, value in info.items():
+                    if key.startswith('rew_'):
+                        self.logger.record(f'reward/{key}', value)
+        return True
 
 def train():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", type=str, nargs='?', const='auto', help="Resume training from latest checkpoint ('auto') or specific path")
+    parser.add_argument("--suffix", type=str, default="", help="Optional suffix for the run ID (e.g. 'worker_score')")
     args = parser.parse_args()
 
     # Load ML config
@@ -54,6 +78,13 @@ def train():
             run_id = f"PPO_{len(existing_runs) + 1}"
     
     print(f"Current Training Run: {run_id}")
+    if args.suffix:
+        run_id = f"{run_id}_{args.suffix}"
+        print(f"Run Suffix applied: {args.suffix}")
+    
+    # Each run gets its own folder in ml_models
+    run_model_dir = os.path.join(model_dir, run_id)
+    os.makedirs(run_model_dir, exist_ok=True)
     
     load_model = None
     if args.resume:
@@ -83,27 +114,30 @@ def train():
         # Inherit the original log name if possible, or use a new one?
         # SB3 handles it if we don't specify tb_log_name, but let's be explicit
     else:
+        policy_kwargs = dict(net_arch=[256, 256])
         model = PPO(
             "MlpPolicy",
             env,
             verbose=1,
-            learning_rate=train_cfg['learning_rate'],
+            learning_rate=linear_schedule(train_cfg['learning_rate']),
             n_steps=train_cfg['n_steps'],
             batch_size=train_cfg['batch_size'],
+            ent_coef=train_cfg.get('ent_coef', 0.0),
             gamma=train_cfg['gamma'],
+            policy_kwargs=policy_kwargs,
             tensorboard_log=log_dir
         )
     
     # Callbacks
     checkpoint_callback = CheckpointCallback(
-        save_freq=max(1000, 10000 // n_envs), # Adjust freq for parallel envs
-        save_path=model_dir,
+        save_freq=max(5000, 100000 // n_envs), 
+        save_path=run_model_dir,
         name_prefix=f"{run_id}_frc_ppo"
     )
     
     # Best Model Tracker
     eval_env = Monitor(FrcEnv(render_mode=None))
-    best_model_path = os.path.join(model_dir, f"{run_id}_best")
+    best_model_path = os.path.join(run_model_dir, "best_model")
     os.makedirs(best_model_path, exist_ok=True)
     
     eval_callback = EvalCallback(
@@ -116,18 +150,19 @@ def train():
         n_eval_episodes=train_cfg.get('eval_episodes', 5)
     )
     
-    callbacks = [checkpoint_callback, eval_callback]
+    callbacks = [checkpoint_callback, eval_callback, TensorboardCallback()]
     
     print(f"Starting training for {train_cfg['total_timesteps']} timesteps...")
     model.learn(
         total_timesteps=train_cfg['total_timesteps'],
         callback=callbacks,
         progress_bar=True,
-        reset_num_timesteps=load_model is None
+        reset_num_timesteps=load_model is None,
+        tb_log_name=run_id
     )
     
     # Save final model
-    final_path = os.path.join(model_dir, f"{run_id}_frc_ppo_final")
+    final_path = os.path.join(run_model_dir, f"{run_id}_frc_ppo_final")
     model.save(final_path)
     print(f"Training complete! Model saved to {final_path}")
 

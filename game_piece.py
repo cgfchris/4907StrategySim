@@ -43,8 +43,13 @@ class GamePieceManager:
         # AI Awareness: Global Densities
         self.grid_counts = {} # (gx, gy) -> fuel count
         
+    def reset(self, config):
+        self.fuels = []
+        self.outpost_released = False
+        self.penalties = []
+        self.dump_queue = []
         self.spawn_initial(config)
-        
+
     def spawn_initial(self, config):
         field_w = config['field']['width_inches']
         field_h = config['field']['length_inches']

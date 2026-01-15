@@ -1,12 +1,15 @@
 {
     "reward_shaping": {
-        "score_reward": 100.0,
+        "score_reward": 200.0,
         "pickup_reward": 2.0,
-        "dump_penalty": -20.0,
+        "dump_penalty": -10.0,
         "major_foul_penalty": -50.0,
-        "time_penalty_per_step": -0.01,
-        "proximity_reward_factor": 0.05,
-        "holding_reward_factor": 0.1
+        "time_penalty_per_step": -0.05,
+        "proximity_reward_factor": 1.0,
+        "hub_proximity_reward_factor": 1.0,
+        "steering_penalty_factor": -0.05,
+        "stashing_reward_factor": 0.1,
+        "holding_reward_factor": 0.0
     },
     "env_params": {
         "frames_per_step": 10,
@@ -15,17 +18,19 @@
             4
         ],
         "max_steps": 1000,
-        "normalize_observations": true
+        "normalize_observations": true,
+        "enforce_phases": false
     },
     "training_params": {
         "algorithm": "PPO",
-        "total_timesteps": 10000000,
+        "total_timesteps": 50000000,
         "learning_rate": 0.0003,
-        "n_steps": 256,
-        "batch_size": 64,
+        "n_steps": 512,
+        "batch_size": 512,
+        "ent_coef": 0.01,
         "gamma": 0.99,
-        "n_envs": 16,
-        "eval_freq": 20000,
-        "eval_episodes": 5
+        "eval_freq": 50000,
+        "eval_episodes": 10,
+        "n_envs": 28
     }
 }

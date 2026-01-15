@@ -4,7 +4,7 @@
     "red_alliance": [
         {
             "name": "Red 1",
-            "model_path": "ml_models/PPO_9_frc_ppo_1467520_steps.zip",
+            "model_path": "ml_models/PPO_18_frc_ppo_29414560_steps.zip",
             "width": 30,
             "length": 25,
             "max_speed": 150,
