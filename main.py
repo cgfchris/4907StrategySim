@@ -22,6 +22,7 @@ def resource_path(relative_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-latest", action="store_true", help="Test the latest model as Red 1 in 1v1 mode")
+    parser.add_argument("--model", type=str, help="Path to a specific model .zip file to test")
     args = parser.parse_args()
 
     pygame.init()
@@ -68,35 +69,39 @@ def main():
     match_mode = config.get('match_mode', '3v3')
     sim_state = "MENU" # MENU or PLAYING
     
-    if args.test_latest:
+    if args.test_latest or args.model:
         match_mode = "1v1"
         sim_state = "PLAYING"
         
-        # Find latest/best model
-        model_dir = "ml_models"
-        # Search recursively for all .zip files
-        all_models = glob.glob(os.path.join(model_dir, "**", "*.zip"), recursive=True)
-        
-        if all_models:
-            # Prioritize 'best_model.zip' if it exists in the subfolder of the most recent run
-            # First, filter for only 'best_model.zip' files
-            best_models = [f for f in all_models if os.path.basename(f) == "best_model.zip"]
-            
-            if best_models:
-                # Use the 'best' model from the most recent run (by modification time of the better file)
-                latest_model = max(best_models, key=os.path.getmtime)
-                print(f"Testing the BEST discovered model: {latest_model}")
+        target_model = None
+        if args.model:
+            if os.path.exists(args.model):
+                target_model = args.model
+                print(f"Testing SPECIFIED model: {target_model}")
             else:
-                # Fallback to the latest top-level checkpoint
-                latest_model = max(all_models, key=os.path.getmtime)
-                print(f"Testing the latest available model: {latest_model}")
-                
+                print(f"Error: Specified model path {args.model} not found.")
+                sim_state = "MENU"
+        elif args.test_latest:
+            # Find latest/best model
+            model_dir = "ml_models"
+            all_models = glob.glob(os.path.join(model_dir, "**", "*.zip"), recursive=True)
+            
+            if all_models:
+                best_models = [f for f in all_models if os.path.basename(f) == "best_model.zip"]
+                if best_models:
+                    target_model = max(best_models, key=os.path.getmtime)
+                    print(f"Testing the BEST discovered model: {target_model}")
+                else:
+                    target_model = max(all_models, key=os.path.getmtime)
+                    print(f"Testing the latest available model: {target_model}")
+            else:
+                print("No models found in ml_models/ to test.")
+                sim_state = "MENU"
+
+        if target_model:
             # Inject into config temp override
-            config['red_alliance'][0]['model_path'] = latest_model
+            config['red_alliance'][0]['model_path'] = target_model
             config['red_alliance'][0]['is_ai'] = True
-        else:
-            print("No models found in ml_models/ to test.")
-            sim_state = "MENU"
     
     # Initialize robots (will be populated on Start)
     robots = []
@@ -158,11 +163,12 @@ def main():
     
     if sim_state == "PLAYING":
         init_match()
+        last_abs_time = time.time() # Reset timer after load
 
     running = True
     while running:
         current_abs_time = time.time()
-        dt = current_abs_time - last_abs_time
+        dt = min(0.1, current_abs_time - last_abs_time)
         last_abs_time = current_abs_time
         
         for event in pygame.event.get():
@@ -179,6 +185,7 @@ def main():
                     if field_width//2 - 100 <= mx <= field_width//2 + 100 and 350 <= my <= 410:
                         sim_state = "PLAYING"
                         init_match()
+                        last_abs_time = time.time() # Reset timer after load
             
             elif sim_state == "PLAYING":
                 if event.type == pygame.KEYDOWN:

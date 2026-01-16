@@ -26,6 +26,8 @@ class GamePieceManager:
         self.fuels = []
         self.outpost_released = False
         self.penalties = [] # List of (alliance, amount)
+        self.stashed_red = 0
+        self.stashed_blue = 0
         self.dump_queue = []
         
         # Physics Params (Tuneable)
@@ -159,12 +161,12 @@ class GamePieceManager:
     def spawn_dump(self, x, y):
         self.dump_queue.append((x, y))
             
-    def update(self, robots, game_time, config):
+    def update(self, robots, game_time, config, disable_outposts=False):
         dt = 1/60 
         dump_time = config['field'].get('outpost_dump_time', 30.0)
         p_val = config['field'].get('hub_penalty_value', 5)
         
-        if game_time > dump_time and not self.outpost_released:
+        if not disable_outposts and game_time > dump_time and not self.outpost_released:
             self.release_outpost(config)
 
         # Handle Dump Queue
@@ -181,6 +183,8 @@ class GamePieceManager:
             self.fuels.append(f)
 
         self.penalties = [] # Clear penalties each frame (or handle them in main)
+        self.stashed_red = 0
+        self.stashed_blue = 0
 
         # 1. Clear/Rebuild Grid and Update Fuel Physics
         self.grid = {(gx, gy): [] for gx in range(self.grid_size[0]) for gy in range(self.grid_size[1])}
@@ -199,11 +203,20 @@ class GamePieceManager:
                     fuel.bounces = 1 
 
             if abs(fuel.vel_x) > 0.1 or abs(fuel.vel_y) > 0.1:
+                old_x = fuel.x
                 fuel.x += fuel.vel_x * dt
                 fuel.y += fuel.vel_y * dt
                 fuel.vel_x *= self.friction
                 fuel.vel_y *= self.friction
                 
+                # Check for Zone Crossings (Stashing)
+                divider_x = config['field']['divider_x']
+                field_w = config['field']['width_inches']
+                if old_x >= divider_x and fuel.x < divider_x:
+                    self.stashed_red += 1
+                elif old_x <= (field_w - divider_x) and fuel.x > (field_w - divider_x):
+                    self.stashed_blue += 1
+
                 if abs(fuel.vel_x) < 1.0: fuel.vel_x = 0
                 if abs(fuel.vel_y) < 1.0: fuel.vel_y = 0
                 

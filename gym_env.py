@@ -56,8 +56,13 @@ class FrcEnv(gym.Env):
         self.last_score = 0
         self.last_holding = 0
         self.total_reward = 0
+        self.disable_outposts = False
 
     def _get_can_score(self, alliance):
+        # Global override for "Total Freedom" baseline training (can be overridden by subclass)
+        if not self.ml_config['env_params'].get('enforce_phases', True):
+            return True
+
         # Mirroring main.py state machine (simplified for 1v1 Red training)
         if 0 <= self.game_time < 30: 
             return True # AUTO + TRANSITION
@@ -114,6 +119,7 @@ class FrcEnv(gym.Env):
         self.last_min_dist = 999.0
         self.last_hub_dist = 999.0
         self.last_robot_x = self.controlled_robot.x
+        self.last_stashed_count = 0
         self.ep_rewards = {
             'rew_score': 0.0,
             'rew_pickup': 0.0,
@@ -151,13 +157,9 @@ class FrcEnv(gym.Env):
         last_pos = (self.controlled_robot.x, self.controlled_robot.y)
         
         for _ in range(self.frames_per_step):
-            # Match Phase Scoring Check
-            if self.ml_config['env_params'].get('enforce_phases', True):
-                can_score_red = self._get_can_score("red")
-                can_score_blue = self._get_can_score("blue")
-            else:
-                can_score_red = True
-                can_score_blue = True
+            # Match Phase Scoring Check (respects internal state and config)
+            can_score_red = self._get_can_score("red")
+            can_score_blue = self._get_can_score("blue")
             
             # Update controlled robot
             dummy_keys = [False] * 512
@@ -188,7 +190,10 @@ class FrcEnv(gym.Env):
                     if isinstance(other_res, dict) and other_res.get('scored'):
                         self.pieces.recycle_fuel(robot, self.sim_config['field'])
             
-            self.pieces.update(self.robots, self.game_time, self.sim_config)
+            self.pieces.update(self.robots, self.game_time, self.sim_config, disable_outposts=self.disable_outposts)
+            
+            if self.render_mode == "human":
+                self.render()
             
             # Check for penalties (fouls)
             for foul_alliance, amount in self.pieces.penalties:
@@ -231,7 +236,9 @@ class FrcEnv(gym.Env):
                 # Delta hub distance
                 hub_delta = self.last_hub_dist - dist_to_hub
                 if abs(hub_delta) < 50:
-                    rew_hub_proxim = hub_delta * rew_cfg.get('hub_proximity_reward_factor', 0)
+                    # DEPRECATED: One-Way rewards were exploitable for 'wiggling'
+                    # We now rely on completion (score) and time penalty (hustle)
+                    rew_hub_proxim = 0.0
             else:
                 # Goal Line Stashing Reward (1-foot buffer past divider)
                 is_red = self.controlled_robot.alliance == "red"
@@ -247,11 +254,30 @@ class FrcEnv(gym.Env):
                     dist_to_line = max(0, goal_line_x - self.controlled_robot.x)
                     last_dist_to_line = max(0, goal_line_x - self.last_robot_x)
 
-                progress = last_dist_to_line - dist_to_line
+                # One-Way: Only reward getting closer to the goal line, don't penalize hunting trips
+                progress = max(0, last_dist_to_line - dist_to_line)
                 shuttle_factor = rew_cfg.get('stashing_reward_factor', 0)
                 
-                # Reward progress carrying fuel + one-time bonus for passing it over the line
-                rew_stashing = progress * current_holding * shuttle_factor + (passed_this_step + dumped_this_step) * dist_to_line * shuttle_factor
+                # Formula: (Carrying Progress) + (Bonus per ball that JUST crossed) + (Pulse / Trigger bonus)
+                stashed_count = self.pieces.stashed_red if is_red else self.pieces.stashed_blue
+                stashed_delta = stashed_count - self.last_stashed_count
+                self.last_stashed_count = stashed_count
+                
+                # Formula: (Bonus per ball that JUST crossed) + (Pulse / Trigger bonus)
+                # DEPRECATED: progress component removed to prevent 'inching' exploits
+                trigger_bonus = (passed_this_step + dumped_this_step) * 10.0
+                
+                rew_stashing = (stashed_delta * 200.0) + trigger_bonus
+                
+                # Penalty for 'lazy dumping' in the Neutral Zone (Lobber only)
+                # We check mode for SpecializedFrcEnv, or just if it's not a Hub Scorer
+                if dumped_this_step and not self.last_can_score:
+                    if (is_red and self.controlled_robot.x > field_cfg['divider_x']) or \
+                       (not is_red and self.controlled_robot.x < field_cfg['divider_x']):
+                        rew_stashing -= 20.0 # Heavier penalty for dumping on the wrong side
+                
+                if passed_this_step:
+                    rew_stashing += 2.0
             
             self.last_robot_x = self.controlled_robot.x
             self.last_hub_dist = dist_to_hub
@@ -320,7 +346,7 @@ class FrcEnv(gym.Env):
         ppi = self.sim_config['field']['pixels_per_inch']
         self.screen.fill((30, 30, 30))
         self.field.draw(self.screen, ppi)
-        self.pieces.draw(self.screen, ppi)
+        self.pieces.draw(self.screen)
         for robot in self.robots:
             robot.draw(self.screen, ppi, self.font)
             
@@ -330,7 +356,7 @@ class FrcEnv(gym.Env):
 
         if self.render_mode == "human":
             pygame.display.flip()
-            # self.clock.tick(self.fps) # Don't limit during training unless human mode is on
+            self.clock.tick(self.fps) 
         elif self.render_mode == "rgb_array":
             return np.transpose(np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2))
 

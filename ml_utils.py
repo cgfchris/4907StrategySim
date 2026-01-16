@@ -1,7 +1,7 @@
 import numpy as np
 import math
 
-def get_observation(robot, field, pieces, sim_config, game_time, match_duration, can_score=False, can_pass=False):
+def get_observation(robot, field, pieces, sim_config, game_time, match_duration, can_score=False, can_pass=False, target_x=None, target_y=None):
     is_red = robot.alliance == "red"
     width = sim_config['field']['width_inches']
     height = sim_config['field']['length_inches']
@@ -17,14 +17,22 @@ def get_observation(robot, field, pieces, sim_config, game_time, match_duration,
         1.0 if is_red else 0.0
     ]
 
+    # Rotation for Robot-Oriented Vision (aligning intake with local X-axis)
+    # math.radians(robot.angle) is in degrees, likely compass-style
+    # We want local coordinates: +X is Front (Intake), +Y is Left
+    c, s = math.cos(-rad), math.sin(-rad)
+
     # 2. Closest Fuel - 20 features (Indices 6-25)
     fuels = []
     for fuel in pieces.fuels:
         if not fuel.collected:
-            dx = fuel.x - robot.x
-            dy = fuel.y - robot.y
-            dist_sq = dx**2 + dy**2
-            fuels.append((dist_sq, dx, dy, fuel))
+            dx_field = fuel.x - robot.x
+            dy_field = fuel.y - robot.y
+            dist_sq = dx_field**2 + dy_field**2
+            # Rotate into robot frame
+            dx_rel = dx_field * c - dy_field * s
+            dy_rel = dx_field * s + dy_field * c
+            fuels.append((dist_sq, dx_rel, dy_rel, fuel))
     
     fuels.sort(key=lambda x: x[0])
     obs_fuel = []
@@ -43,6 +51,7 @@ def get_observation(robot, field, pieces, sim_config, game_time, match_duration,
             obs_fuel.extend([0, 0, 0, 0])
 
     # 3. Grid View (4x4) - 16 features (Indices 26-41)
+    # (Grid stays field-oriented as it's a 'minimap' feature)
     divider_x = sim_config['field']['divider_x']
     x_bins = [0, divider_x, width/2, width - divider_x, width]
     y_bins = np.linspace(0, height, 5) 
@@ -50,42 +59,47 @@ def get_observation(robot, field, pieces, sim_config, game_time, match_duration,
     grid_counts = np.zeros((4, 4))
     for fuel in pieces.fuels:
         if not fuel.collected:
-            gx = -1
+            gx, gy = -1, -1
             for i in range(4):
                 if x_bins[i] <= fuel.x < x_bins[i+1]:
                     gx = i
                     break
-            
-            gy = -1
             for i in range(4):
                 if y_bins[i] <= fuel.y < y_bins[i+1]:
                     gy = i
                     break
-            
             if gx != -1 and gy != -1:
                 grid_counts[gx, gy] += 1
                 
     obs_grid = (grid_counts.flatten() / 10.0).tolist()
 
     # 4. Game State - 2 features (Indices 42-43)
-    # We MUST keep this at index 42/43 to avoid shifting the Hub coordinates (44-47).
-    # Replacement: Index 43 (formerly constant 1.0) now holds can_score.
     obs_state = [
         game_time / match_duration,
         1.0 if can_score else 0.0
     ]
 
     # 5. Strategic Points - 4 features (Indices 44-47)
-    # We MUST keep these at indices 44-47.
     own_hub = field.hubs[0] if is_red else field.hubs[1]
     enemy_hub = field.hubs[1] if is_red else field.hubs[0]
-    # Replacement: Index 47 (formerly enemy_hub_y) now holds can_pass.
-    # Hub Y is identical for both hubs, so Index 45 (own_hub_y) still provides the Y coordinate.
-    obs_strat = [
+    
+    # Defaults in Field Frame (Relative to Robot Position)
+    vals = [
         (own_hub['x'] - robot.x) / width,
         (own_hub['y'] - robot.y) / height,
         (enemy_hub['x'] - robot.x) / width,
-        1.0 if can_pass else 0.0 # Replaces enemy_hub_y which was redundant
+        1.0 if can_pass else 0.0 # Index 47!
     ]
+    
+    if target_x is not None and target_y is not None:
+        # Specialized Mode: Overwrite Indices 44-45 with Robot-Oriented Target Vector
+        # Index 46 stays Enemy Hub X (unused in lab)
+        # Index 47 stays can_pass (CRITICAL FIX)
+        tdx_field = target_x - robot.x
+        tdy_field = target_y - robot.y
+        tdx_rel = tdx_field * c - tdy_field * s
+        tdy_rel = tdx_field * s + tdy_field * c
+        vals[0] = tdx_rel / width
+        vals[1] = tdy_rel / height
 
-    return np.array(obs_self + obs_fuel + obs_grid + obs_state + obs_strat, dtype=np.float32)
+    return np.array(obs_self + obs_fuel + obs_grid + obs_state + vals, dtype=np.float32)
