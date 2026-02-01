@@ -8,7 +8,7 @@
         "proximity_reward_factor": 1.0,
         "hub_proximity_reward_factor": 0.0,
         "steering_penalty_factor": -0.01,
-        "stashing_reward_factor": 0.0,
+        "passing_reward_factor": 0.0,
         "holding_reward_factor": 0.0
     },
     "env_params": {
@@ -21,9 +21,14 @@
         "normalize_observations": true,
         "enforce_phases": false
     },
+    "manager_config": {
+        "janitor_model_path": "ml_models/PPO_4_janitor_jan18_v2/best_model/best_model.zip",
+        "lobber_model_path": "ml_models/PPO_4_lobber_jan18_newspawn/best_model/best_model.zip",
+        "update_rate": 60
+    },
     "training_params": {
         "algorithm": "PPO",
-        "total_timesteps": 50000000,
+        "total_timesteps": 20000000,
         "learning_rate": 0.0003,
         "n_steps": 512,
         "batch_size": 512,
@@ -31,6 +36,22 @@
         "gamma": 0.99,
         "eval_freq": 50000,
         "eval_episodes": 5,
-        "n_envs": 14
+        "n_envs": 28
+    },
+    "manager_training_params": {
+        "algorithm": "PPO",
+        "total_timesteps": 1000000,
+        "learning_rate": 0.0003,
+        "n_steps": 128,
+        "batch_size": 64,
+        "ent_coef": 0.01,
+        "gamma": 0.99,
+        "eval_freq": 1000,
+        "n_envs": 24,
+        "mini_match": true,
+        "net_arch": [
+            256,
+            256
+        ]
     }
 }

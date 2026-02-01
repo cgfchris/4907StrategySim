@@ -57,6 +57,11 @@ class FrcEnv(gym.Env):
         self.last_holding = 0
         self.total_reward = 0
         self.disable_outposts = False
+        self.disable_recycling = False # Lab Mode Flag
+
+    def _draw_extra_overlays(self):
+        """Hook for subclasses to add UI elements before flip()"""
+        pass
 
     def _get_can_score(self, alliance):
         # Global override for "Total Freedom" baseline training (can be overridden by subclass)
@@ -125,7 +130,8 @@ class FrcEnv(gym.Env):
             'rew_pickup': 0.0,
             'rew_proximity': 0.0,
             'rew_hub_proximity': 0.0,
-            'rew_stashing': 0.0,
+            'rew_hub_proximity': 0.0,
+            'rew_passing': 0.0,
             'rew_time': 0.0,
             'rew_steer': 0.0,
             'rew_dump': 0.0
@@ -173,7 +179,7 @@ class FrcEnv(gym.Env):
                 self.total_scored += res['scored']
                 dumped_this_step += res['dumped']
                 passed_this_step += res['passed']
-                if res['scored'] > 0:
+                if res['scored'] > 0 and not self.disable_recycling:
                     self.pieces.recycle_fuel(self.controlled_robot, self.sim_config['field'])
             
             # Update other robots (using heuristic AI)
@@ -190,7 +196,7 @@ class FrcEnv(gym.Env):
                     if isinstance(other_res, dict) and other_res.get('scored'):
                         self.pieces.recycle_fuel(robot, self.sim_config['field'])
             
-            self.pieces.update(self.robots, self.game_time, self.sim_config, disable_outposts=self.disable_outposts)
+            self.pieces.update(self.robots, self.game_time, self.sim_config, disable_outposts=self.disable_outposts, consume_passed=self.disable_recycling)
             
             if self.render_mode == "human":
                 self.render()
@@ -225,9 +231,9 @@ class FrcEnv(gym.Env):
         rew_pickup = (current_holding - self.last_holding + scored_this_step + passed_this_step + dumped_this_step) * rew_cfg['pickup_reward']
         self.last_holding = current_holding
         
-        # Hub proximity vs Stashing Reward
+        # Hub proximity vs Passing Reward
         rew_hub_proxim = 0.0
-        rew_stashing = 0.0
+        rew_passing = 0.0
         if current_holding > 0 or scored_this_step > 0 or passed_this_step > 0 or dumped_this_step > 0:
             own_hub = self.field.hubs[0] if self.controlled_robot.alliance == "red" else self.field.hubs[1]
             dist_to_hub = ((own_hub['x'] - self.controlled_robot.x)**2 + (own_hub['y'] - self.controlled_robot.y)**2)**0.5
@@ -240,7 +246,7 @@ class FrcEnv(gym.Env):
                     # We now rely on completion (score) and time penalty (hustle)
                     rew_hub_proxim = 0.0
             else:
-                # Goal Line Stashing Reward (1-foot buffer past divider)
+                # Goal Line Passing Reward (1-foot buffer past divider)
                 is_red = self.controlled_robot.alliance == "red"
                 field_cfg = self.sim_config['field']
                 
@@ -256,28 +262,31 @@ class FrcEnv(gym.Env):
 
                 # One-Way: Only reward getting closer to the goal line, don't penalize hunting trips
                 progress = max(0, last_dist_to_line - dist_to_line)
-                shuttle_factor = rew_cfg.get('stashing_reward_factor', 0)
+                shuttle_factor = rew_cfg.get('passing_reward_factor', 0)
                 
                 # Formula: (Carrying Progress) + (Bonus per ball that JUST crossed) + (Pulse / Trigger bonus)
-                stashed_count = self.pieces.stashed_red if is_red else self.pieces.stashed_blue
-                stashed_delta = stashed_count - self.last_stashed_count
-                self.last_stashed_count = stashed_count
+                passed_count = self.pieces.passed_red if is_red else self.pieces.passed_blue
+                passed_delta = passed_count - self.last_stashed_count
+                self.last_stashed_count = passed_count
                 
                 # Formula: (Bonus per ball that JUST crossed) + (Pulse / Trigger bonus)
                 # DEPRECATED: progress component removed to prevent 'inching' exploits
-                trigger_bonus = (passed_this_step + dumped_this_step) * 10.0
+                # NEW STRATEGY (V4.1): Front-load the reward to fix "Hoarding".
+                # Since passing is deterministic, Reward the decision (Trigger), not just the result.
+                # FIX: Do NOT reward dumping here! Dumping just drops the ball at feet.
+                trigger_bonus = passed_this_step * 150.0
                 
-                rew_stashing = (stashed_delta * 200.0) + trigger_bonus
+                # Small residual reward for confirmation (50.0)
+                rew_passing = (passed_delta * 50.0) + trigger_bonus
                 
                 # Penalty for 'lazy dumping' in the Neutral Zone (Lobber only)
                 # We check mode for SpecializedFrcEnv, or just if it's not a Hub Scorer
                 if dumped_this_step and not self.last_can_score:
                     if (is_red and self.controlled_robot.x > field_cfg['divider_x']) or \
                        (not is_red and self.controlled_robot.x < field_cfg['divider_x']):
-                        rew_stashing -= 20.0 # Heavier penalty for dumping on the wrong side
+                        rew_passing -= 20.0 # Heavier penalty for dumping on the wrong side
                 
-                if passed_this_step:
-                    rew_stashing += 2.0
+                # Removed the noise (+2.0) at the end, as trigger_bonus covers it.
             
             self.last_robot_x = self.controlled_robot.x
             self.last_hub_dist = dist_to_hub
@@ -305,14 +314,14 @@ class FrcEnv(gym.Env):
         rew_time = rew_cfg.get('time_penalty_per_step', 0)
         rew_steer = abs(action[2]) * rew_cfg.get('steering_penalty_factor', 0)
 
-        step_reward = rew_score + rew_dump + rew_pickup + rew_hub_proxim + rew_stashing + rew_proxim + rew_time + rew_steer
+        step_reward = rew_score + rew_dump + rew_pickup + rew_hub_proxim + rew_passing + rew_proxim + rew_time + rew_steer
         
         # Accumulate for breakdown
         self.ep_rewards['rew_score'] += rew_score
         self.ep_rewards['rew_pickup'] += rew_pickup
         self.ep_rewards['rew_proximity'] += rew_proxim
         self.ep_rewards['rew_hub_proximity'] += rew_hub_proxim
-        self.ep_rewards['rew_stashing'] += rew_stashing
+        self.ep_rewards['rew_passing'] += rew_passing
         self.ep_rewards['rew_time'] += rew_time
         self.ep_rewards['rew_steer'] += rew_steer
         self.ep_rewards['rew_dump'] += rew_dump
@@ -353,6 +362,8 @@ class FrcEnv(gym.Env):
         # Draw some ML info
         score_text = self.font.render(f"Reward: {self.total_reward:.1f} Time: {self.game_time:.1f}s", True, (255, 255, 255))
         self.screen.blit(score_text, (20, 20))
+        
+        self._draw_extra_overlays()
 
         if self.render_mode == "human":
             pygame.display.flip()

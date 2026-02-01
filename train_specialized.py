@@ -110,6 +110,17 @@ def train():
                 valid_candidates.sort(key=lambda x: os.path.getmtime(x), reverse=True)
                 args.resume = valid_candidates[0]
                 print(f"Auto-resuming latest valid {args.mode} run: {args.resume}")
+                
+                # Auto-detect suffix if not provided
+                if not args.suffix:
+                    dirname = os.path.basename(os.path.normpath(args.resume))
+                    parts = dirname.split('_')
+                    # Expected: PPO_N_mode_suffix
+                    # parts[0]=PPO, parts[1]=N, parts[2]=mode, parts[3:]=suffix
+                    if len(parts) > 3 and parts[2] == args.mode:
+                        detected_suffix = "_".join(parts[3:])
+                        print(f"Auto-detected suffix: {detected_suffix}")
+                        args.suffix = detected_suffix
             else:
                 args.resume = None # No model found, start fresh without error
         

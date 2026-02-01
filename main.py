@@ -27,8 +27,16 @@ def main():
 
     pygame.init()
     
-    with open(resource_path('config.json'), 'r') as f:
-        config = json.load(f)
+    config = {}
+    def load_config_files():
+        nonlocal config
+        try:
+            with open(resource_path('config.json'), 'r') as f:
+                config.update(json.load(f))
+        except Exception as e:
+            print(f"Error loading config.json: {e}")
+            
+    load_config_files()
     
     ppi = config['field']['pixels_per_inch']
     field_width_in = config['field']['width_inches']
@@ -49,21 +57,36 @@ def main():
     field = Field(config['field'])
     pieces = GamePieceManager(config, ppi)
     
-    # Swapped Control Schemes
-    # RED: WASD
-    red_ctrl = {
-        'up': pygame.K_w, 'down': pygame.K_s, 'left': pygame.K_a, 'right': pygame.K_d,
-        'rotate_l': pygame.K_q, 'rotate_r': pygame.K_e,
-        'shoot_key': pygame.K_v, 'pass_key': pygame.K_b,
-        'dump_key': pygame.K_c
-    }
-    # BLUE: ARROWS
-    blue_ctrl = {
-        'up': pygame.K_UP, 'down': pygame.K_DOWN, 'left': pygame.K_LEFT, 'right': pygame.K_RIGHT,
-        'rotate_l': pygame.K_COMMA, 'rotate_r': pygame.K_PERIOD,
-        'shoot_key': pygame.K_SLASH, 'pass_key': pygame.K_RSHIFT,
-        'dump_key': pygame.K_m
-    }
+    # Load Controls from Config
+    def get_ctrl_mapping(alliance):
+        default_red = {
+            'up': 'w', 'down': 's', 'left': 'a', 'right': 'd',
+            'rotate_l': 'q', 'rotate_r': 'e',
+            'shoot_key': 'v', 'pass_key': 'b', 'dump_key': 'c'
+        }
+        default_blue = {
+            'up': 'up', 'down': 'down', 'left': 'left', 'right': 'right',
+            'rotate_l': ',', 'rotate_r': '.',
+            'shoot_key': '/', 'pass_key': 'rshift', 'dump_key': 'm'
+        }
+        
+        cfg_ctrls = config.get('controls', {}).get(alliance, default_red if alliance == 'red' else default_blue)
+        mapping = {}
+        for action, key_str in cfg_ctrls.items():
+            try:
+                mapping[action] = pygame.key.key_code(key_str)
+            except ValueError:
+                # Fallback for keys like "rshift" which might not be in key_code in older versions
+                # or special cases if needed. key_code handles most.
+                if key_str.lower() == "rshift": mapping[action] = pygame.K_RSHIFT
+                elif key_str.lower() == ",": mapping[action] = pygame.K_COMMA
+                elif key_str.lower() == ".": mapping[action] = pygame.K_PERIOD
+                elif key_str.lower() == "/": mapping[action] = pygame.K_SLASH
+                else: mapping[action] = 0 # Disabled/Unknown
+        return mapping
+
+    red_ctrl = get_ctrl_mapping('red')
+    blue_ctrl = get_ctrl_mapping('blue')
     
     # Match Mode and UI state
     match_mode = config.get('match_mode', '3v3')
@@ -115,6 +138,7 @@ def main():
     
     def init_match():
         nonlocal robots, robot_ais, scores, penalty_scores, game_time, auto_winner, stage_alliances
+        load_config_files() # HOT RELOAD
         robots = []
         robot_ais = {}
         scores = {"red": 0, "blue": 0}
@@ -129,8 +153,21 @@ def main():
         # Red Alliance
         for i, r_cfg in enumerate(red_all):
             spacing = field_height_in / (len(red_all) + 1)
-            y_pos = spacing * (i + 1)
-            robot = Robot(100, y_pos, r_cfg, "red")
+            sx, sy = 100, spacing * (i + 1)
+            
+            # Load External Auto Routine
+            auto_file = r_cfg.get('auto_routine_file')
+            if auto_file and os.path.exists(auto_file):
+                try:
+                    with open(auto_file, 'r') as f:
+                        auto_data = json.load(f)
+                        r_cfg['auto_routine'] = auto_data.get('routine', [])
+                        sx = auto_data.get('start_x', sx)
+                        sy = auto_data.get('start_y', sy)
+                except Exception as e:
+                    print(f"Error loading auto routine {auto_file}: {e}")
+                    
+            robot = Robot(sx, sy, r_cfg, "red")
             robot.holding = min(8, robot.capacity)
             robots.append(robot)
             if r_cfg.get('is_ai'):
@@ -139,8 +176,21 @@ def main():
         # Blue Alliance
         for i, b_cfg in enumerate(blue_all):
             spacing = field_height_in / (len(blue_all) + 1)
-            y_pos = spacing * (i + 1)
-            robot = Robot(field_width_in - 100, y_pos, b_cfg, "blue")
+            sx, sy = field_width_in - 100, spacing * (i + 1)
+            
+            # Load External Auto Routine
+            auto_file = b_cfg.get('auto_routine_file')
+            if auto_file and os.path.exists(auto_file):
+                try:
+                    with open(auto_file, 'r') as f:
+                        auto_data = json.load(f)
+                        b_cfg['auto_routine'] = auto_data.get('routine', [])
+                        sx = auto_data.get('start_x', sx)
+                        sy = auto_data.get('start_y', sy)
+                except Exception as e:
+                    print(f"Error loading auto routine {auto_file}: {e}")
+                    
+            robot = Robot(sx, sy, b_cfg, "blue")
             robot.holding = min(8, robot.capacity)
             robots.append(robot)
             if b_cfg.get('is_ai'):
@@ -212,6 +262,14 @@ def main():
                         setattr(pieces, tvar, max(0.0, getattr(pieces, tvar) - 0.01))
                     if event.key == pygame.K_EQUALS: # Plus key
                         setattr(pieces, tvar, min(1.0, getattr(pieces, tvar) + 0.01))
+                    if event.key == pygame.K_BACKSPACE:
+                        # Quick Restart
+                        init_match()
+                    if event.key == pygame.K_f:
+                        # Toggle Field Oriented for Human Robots
+                        for robot in robots:
+                            if robot not in robot_ais:
+                                robot.is_field_oriented = not robot.is_field_oriented
         
         if sim_state == "PLAYING" and not paused:
             game_time += dt
@@ -369,7 +427,7 @@ def main():
         screen.blit(font.render(tuning_text, True, (200, 200, 200)), (30, 68))
         
         # Controls (Moved to bottom)
-        controls_text = "RED: WASD + Q E V B | BLUE: ARROWS + < > / SHIFT | R: Reset"
+        controls_text = "See config.json | [BS]: Quick Restart | [ ] Tune | F: Field | R: Menu"
         screen.blit(font.render(controls_text, True, (180, 180, 180)), (field_width - 550, 105))
         
         # AI Recovery Status

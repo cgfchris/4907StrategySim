@@ -1,0 +1,66 @@
+{
+    "start_x": 175,
+    "start_y": 20,
+    "routine": [
+        {
+            "t": 1.5,
+            "shoot_state": true
+        },
+        {
+            "target_x": 280,
+            "target_y": 30,
+            "rot": 90,
+            "intake_state": true
+        },
+        {
+            "target_x": 310,
+            "target_y": 150,
+            "rot": 90,
+            "intake_state": true,
+            "pass_state": true,
+            "pass_target_x": 120,
+            "pass_target_y": 50
+        },
+        {
+            "t": 0.25,
+            "x": -1,
+            "rot": 180,
+            "intake_state": true,
+            "pass_state": true,
+            "pass_target_x": 120,
+            "pass_target_y": 50
+        },
+        {
+            "t": 0.5,
+            "rot": 0,
+            "intake_state": true,
+            "pass_state": true,
+            "pass_target_x": 120,
+            "pass_target_y": 50
+        },
+        {
+            "target_x": 310,
+            "target_y": 50,
+            "rot": -90,
+            "pass_state": true,
+            "pass_target_x": 120,
+            "pass_target_y": 50
+        },
+        {
+            "target_x": 100,
+            "target_y": 30,
+            "rot": 90,
+            "pass_state": false,
+            "shoot_state": true,
+            "intake_state": true
+        },
+        {
+            "target_x": 50,
+            "target_y": 50,
+            "rot": -135,
+            "pass_state": false,
+            "shoot_state": true,
+            "intake_state": true
+        }
+    ]
+}

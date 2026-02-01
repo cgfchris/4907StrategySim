@@ -26,8 +26,8 @@ class GamePieceManager:
         self.fuels = []
         self.outpost_released = False
         self.penalties = [] # List of (alliance, amount)
-        self.stashed_red = 0
-        self.stashed_blue = 0
+        self.passed_red = 0
+        self.passed_blue = 0
         self.dump_queue = []
         
         # Physics Params (Tuneable)
@@ -41,6 +41,7 @@ class GamePieceManager:
         self.field_h = config['field']['length_inches']
         self.cell_w = self.field_w / self.grid_size[0]
         self.cell_h = self.field_h / self.grid_size[1]
+        self.divider_x = config['field']['divider_x']
         
         # AI Awareness: Global Densities
         self.grid_counts = {} # (gx, gy) -> fuel count
@@ -113,6 +114,15 @@ class GamePieceManager:
         off_y = (dy / dist) * 20
         
         new_fuel = Fuel(x + off_x, y + off_y, self.ppi, "pass")
+        
+        # Teleport Glitch Fix: Check for ENTRY into the target zone
+        # Red: Entering from Right -> Left (crosses divider_x)
+        # Blue: Entering from Left -> Right (crosses width - divider_x)
+        if x > self.divider_x and new_fuel.x <= self.divider_x:
+            self.passed_red += 1
+        elif x < (self.field_w - self.divider_x) and new_fuel.x >= (self.field_w - self.divider_x):
+            self.passed_blue += 1
+            
         new_fuel.immune_timer = 0.5 
         
         # Velocity magnitude
@@ -161,7 +171,7 @@ class GamePieceManager:
     def spawn_dump(self, x, y):
         self.dump_queue.append((x, y))
             
-    def update(self, robots, game_time, config, disable_outposts=False):
+    def update(self, robots, game_time, config, disable_outposts=False, consume_passed=False):
         dt = 1/60 
         dump_time = config['field'].get('outpost_dump_time', 30.0)
         p_val = config['field'].get('hub_penalty_value', 5)
@@ -183,8 +193,8 @@ class GamePieceManager:
             self.fuels.append(f)
 
         self.penalties = [] # Clear penalties each frame (or handle them in main)
-        self.stashed_red = 0
-        self.stashed_blue = 0
+        self.passed_red = 0
+        self.passed_blue = 0
 
         # 1. Clear/Rebuild Grid and Update Fuel Physics
         self.grid = {(gx, gy): [] for gx in range(self.grid_size[0]) for gy in range(self.grid_size[1])}
@@ -209,13 +219,18 @@ class GamePieceManager:
                 fuel.vel_x *= self.friction
                 fuel.vel_y *= self.friction
                 
-                # Check for Zone Crossings (Stashing)
+                # Check for Zone Crossings (Passing)
                 divider_x = config['field']['divider_x']
                 field_w = config['field']['width_inches']
-                if old_x >= divider_x and fuel.x < divider_x:
-                    self.stashed_red += 1
-                elif old_x <= (field_w - divider_x) and fuel.x > (field_w - divider_x):
-                    self.stashed_blue += 1
+                
+                # Red: Entering from Right (> divider) to Left (< divider)
+                if old_x > divider_x and fuel.x <= divider_x:
+                    self.passed_red += 1
+                    if consume_passed: fuel.collected = True
+                # Blue: Entering from Left (< W-div) to Right (> W-div)
+                elif old_x < (field_w - divider_x) and fuel.x >= (field_w - divider_x):
+                    self.passed_blue += 1
+                    if consume_passed: fuel.collected = True
 
                 if abs(fuel.vel_x) < 1.0: fuel.vel_x = 0
                 if abs(fuel.vel_y) < 1.0: fuel.vel_y = 0
@@ -302,3 +317,15 @@ class GamePieceManager:
     def draw(self, screen):
         for fuel in self.fuels:
             fuel.draw(screen, self.ppi)
+            
+    def get_grid_counts(self, field, w_cells, h_cells):
+        # Flatten grid counts into 1D array
+        # grid_counts is {(x,y): count}
+        # We need to ensure we return it in a stable order (e.g. row major or similar)
+        # Expected shape: w_cells * h_cells
+        flat = []
+        for y in range(h_cells):
+            for x in range(w_cells):
+                flat.append(self.grid_counts.get((x,y), 0))
+        import numpy as np
+        return np.array(flat, dtype=np.float32)

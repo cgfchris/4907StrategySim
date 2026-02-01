@@ -51,27 +51,36 @@ def get_observation(robot, field, pieces, sim_config, game_time, match_duration,
             obs_fuel.extend([0, 0, 0, 0])
 
     # 3. Grid View (4x4) - 16 features (Indices 26-41)
-    # (Grid stays field-oriented as it's a 'minimap' feature)
-    divider_x = sim_config['field']['divider_x']
-    x_bins = [0, divider_x, width/2, width - divider_x, width]
-    y_bins = np.linspace(0, height, 5) 
+    # 3. Grid View (4x4) - 16 features (Indices 26-41)
+    # (Grid IS NOW ROBOT-ORIENTED / EGO-CENTRIC)
+    # We want to know: "Is there fuel in the Front-Left?"
+    # Bins are defined relative to robot (0,0 is robot center)
+    # Range: -120 to +120 inches (20ft box)
+    grid_bins = [-120, -30, 0, 30, 120]
     
     grid_counts = np.zeros((4, 4))
     for fuel in pieces.fuels:
         if not fuel.collected:
+            dx_field = fuel.x - robot.x
+            dy_field = fuel.y - robot.y
+            
+            # Rotate into robot frame (Reuse c, s from line 23)
+            dx_rel = dx_field * c - dy_field * s
+            dy_rel = dx_field * s + dy_field * c
+            
             gx, gy = -1, -1
             for i in range(4):
-                if x_bins[i] <= fuel.x < x_bins[i+1]:
+                if grid_bins[i] <= dx_rel < grid_bins[i+1]:
                     gx = i
                     break
             for i in range(4):
-                if y_bins[i] <= fuel.y < y_bins[i+1]:
+                if grid_bins[i] <= dy_rel < grid_bins[i+1]:
                     gy = i
                     break
             if gx != -1 and gy != -1:
                 grid_counts[gx, gy] += 1
                 
-    obs_grid = (grid_counts.flatten() / 10.0).tolist()
+    obs_grid = (grid_counts.flatten() / 5.0).tolist() # Normalize count slightly differently (densities)
 
     # 4. Game State - 2 features (Indices 42-43)
     obs_state = [
@@ -92,14 +101,16 @@ def get_observation(robot, field, pieces, sim_config, game_time, match_duration,
     ]
     
     if target_x is not None and target_y is not None:
-        # Specialized Mode: Overwrite Indices 44-45 with Robot-Oriented Target Vector
-        # Index 46 stays Enemy Hub X (unused in lab)
+        # Specialized Mode: Overwrite Index 46 with Robot-Oriented Station X
+        # Index 44-45 stay Own Hub (Goal)
         # Index 47 stays can_pass (CRITICAL FIX)
         tdx_field = target_x - robot.x
         tdy_field = target_y - robot.y
         tdx_rel = tdx_field * c - tdy_field * s
         tdy_rel = tdx_field * s + tdy_field * c
-        vals[0] = tdx_rel / width
-        vals[1] = tdy_rel / height
+        vals[0] = (own_hub['x'] - robot.x) / width
+        vals[1] = (own_hub['y'] - robot.y) / height
+        # Index 46: Relative X to Station (was Enemy Hub X)
+        vals[2] = tdx_rel / width
 
     return np.array(obs_self + obs_fuel + obs_grid + obs_state + vals, dtype=np.float32)
