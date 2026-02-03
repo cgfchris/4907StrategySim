@@ -73,8 +73,11 @@ class GamePieceManager:
                     f.bounces = 1
                     self.fuels.append(f)
 
-        spawn_depot_grid(ds_x, depot_rect_y)
-        spawn_depot_grid(field_w - ds_x - depot_w, depot_rect_y)
+        red_depot_y = depot_rect_y
+        blue_depot_y = field_h - depot_rect_y - depot_h
+        
+        spawn_depot_grid(ds_x, red_depot_y)
+        spawn_depot_grid(field_w - ds_x - depot_w, blue_depot_y)
             
         # 2. Concentrated Grid Scatter (150 pieces)
         box_w, box_h = 72, 182
@@ -251,7 +254,27 @@ class GamePieceManager:
             self.grid[(gx, gy)].append(fuel)
             self.grid_counts[(gx, gy)] += 1
 
-        # 2. Check Robots (Search all fuels for 100% reliability)
+        # 2. Ball-to-Ball Collisions (Spatial Grid)
+        for gx in range(self.grid_size[0]):
+            for gy in range(self.grid_size[1]):
+                cell_fuels = self.grid[(gx, gy)]
+                if not cell_fuels: continue
+                
+                # Check within same cell (triangular loop)
+                for i in range(len(cell_fuels)):
+                    for j in range(i + 1, len(cell_fuels)):
+                        self._resolve_fuel_collision(cell_fuels[i], cell_fuels[j])
+                
+                # Check specific neighbors to avoid double-counting
+                # (Right, Down, Down-Right, Down-Left)
+                for nx, ny in [(gx+1, gy), (gx, gy+1), (gx+1, gy+1), (gx+1, gy-1)]:
+                    if 0 <= nx < self.grid_size[0] and 0 <= ny < self.grid_size[1]:
+                        neighbor_fuels = self.grid[(nx, ny)]
+                        for f1 in cell_fuels:
+                            for f2 in neighbor_fuels:
+                                self._resolve_fuel_collision(f1, f2)
+
+        # 3. Check Robots (Search all fuels for 100% reliability)
         for robot in robots:
             half_l, half_w = robot.length / 2, robot.width / 2
             rad = math.radians(robot.angle)
@@ -329,3 +352,39 @@ class GamePieceManager:
                 flat.append(self.grid_counts.get((x,y), 0))
         import numpy as np
         return np.array(flat, dtype=np.float32)
+
+    def _resolve_fuel_collision(self, f1, f2):
+        if f1.collected or f2.collected: return
+        
+        dx, dy = f2.x - f1.x, f2.y - f1.y
+        dist_sq = dx**2 + dy**2
+        min_dist = f1.radius + f2.radius
+        
+        if dist_sq < min_dist**2 and dist_sq > 0.001:
+            dist = dist_sq**0.5
+            
+            # 1. Overlap Correction (Repulsion)
+            overlap = min_dist - dist
+            nx = dx / dist
+            ny = dy / dist
+            
+            f1.x -= nx * (overlap / 2)
+            f1.y -= ny * (overlap / 2)
+            f2.x += nx * (overlap / 2)
+            f2.y += ny * (overlap / 2)
+            
+            # 2. Elastic Collision (Momentum Swap along Normal)
+            # Relative velocity along normal
+            rel_vx = f1.vel_x - f2.vel_x
+            rel_vy = f1.vel_y - f2.vel_y
+            vel_normal = rel_vx * nx + rel_vy * ny
+            
+            if vel_normal > 0: # Only collide if they are moving toward each other
+                impulse = vel_normal * self.bounciness
+                f1.vel_x -= impulse * nx
+                f1.vel_y -= impulse * ny
+                f2.vel_x += impulse * nx
+                f2.vel_y += impulse * ny
+                
+                f1.bounces += 1
+                f2.bounces += 1

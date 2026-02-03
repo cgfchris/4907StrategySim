@@ -59,6 +59,12 @@ class Robot:
         self.auto_routine = config.get('auto_routine', [])
         self.auto_step_idx = 0
         self.auto_step_timer = 0
+        
+        # Camera FOV (Modular)
+        self.cam_fov_h = config.get('cam_fov_h', 70)
+        self.cam_fov_v = config.get('cam_fov_v', 40)
+        
+        # Custom passing targets
         self.pass_target_x = None
         self.pass_target_y = None
         
@@ -172,9 +178,11 @@ class Robot:
                 dist = (dx**2 + dy**2)**0.5
                 
                 if dist > 5:
-                    # Target Field-Oriented Velocity
-                    target_field_vx = (dx / dist) * current_max_speed
-                    target_field_vy = (dy / dist) * current_max_speed
+                    # Target Field-Oriented Velocity with Arrival Braking
+                    # Slow down in the last 25 inches to prevent overshoot
+                    braking_scale = min(1.0, dist / 25.0)
+                    target_field_vx = (dx / dist) * current_max_speed * braking_scale
+                    target_field_vy = (dy / dist) * current_max_speed * braking_scale
             
             # C. Rotation (Angle P-Loop or Power)
             angle_err = None
@@ -197,6 +205,10 @@ class Robot:
 
             # Check Arrival Completion (if both target and rot are present, wait for both)
             if dist is not None and dist <= 5:
+                # Within arrival circle: Zero the movement intent to prevent "pendulum" snapping
+                target_field_vx = 0
+                target_field_vy = 0
+                
                 # If we are close on position, check if we need to wait for rotation
                 if angle_err is None or abs(angle_err) < 2.0:
                     advance = True
@@ -397,21 +409,20 @@ class Robot:
         new_x = self.x + field_vel_x * dt * speed_factor
         new_y = self.y + field_vel_y * dt * speed_factor
         
-        def check_collision(nx, ny):
-            # Dynamic AABB calculation (scales to account for rotation)
-            rad = math.radians(self.angle)
+        def get_rotated_aabb(robot, nx, ny):
+            rad = math.radians(robot.angle)
             c, s = abs(math.cos(rad)), abs(math.sin(rad))
-            eff_w = self.length * c + self.width * s
-            eff_h = self.length * s + self.width * c
+            eff_w = robot.length * c + robot.width * s
+            eff_h = robot.length * s + robot.width * c
+            return pygame.Rect(int(nx - eff_w/2), int(ny - eff_h/2), int(eff_w), int(eff_h))
+
+        def check_collision(nx, ny):
+            if not (math.isfinite(nx) and math.isfinite(ny)): return True
             
-            if not (math.isfinite(nx) and math.isfinite(ny)):
-                return True
-                
-            try:
-                rect = pygame.Rect(int(nx - eff_w/2), int(ny - eff_h/2), int(eff_w), int(eff_h))
-            except (TypeError, ValueError):
-                return True 
+            # 1. Get our bounding box at the new position
+            rect = get_rotated_aabb(self, nx, ny)
             
+            # 2. Field Colliders
             for wall in field.colliders:
                 if rect.colliderect(wall): return True
             for hub in field.hubs:
@@ -419,21 +430,29 @@ class Robot:
                 dist_sq = dx**2 + dy**2
                 thresh = (hub['r'] + min(self.width, self.length)/2 - 1)
                 if dist_sq < thresh**2: return True
+            
+            # 3. Other Robots (with Escapability)
             for other in robots:
                 if other == self: continue
-                # Broad-phase AABB test
-                if abs(nx - other.x) > (self.length + other.length)/2 + 2: continue
-                if abs(ny - other.y) > (self.width + other.width)/2 + 2: continue
                 
-                # Ensure other robot coordinates are also valid
-                if not (math.isfinite(other.x) and math.isfinite(other.y)):
-                    continue
+                # Broad-phase distance check
+                dx, dy = nx - other.x, ny - other.y
+                dist_sq = dx**2 + dy**2
+                safe_dist = (max(self.width, self.length) + max(other.width, other.length)) / 2 + 5
+                if dist_sq > safe_dist**2: continue
                 
-                try:
-                    other_rect = pygame.Rect(int(other.x - other.length/2), int(other.y - other.width/2), int(other.length), int(other.width))
-                    if rect.colliderect(other_rect): return True
-                except (TypeError, ValueError):
-                    continue
+                # Precise Rotated AABB check
+                other_rect = get_rotated_aabb(other, other.x, other.y)
+                if rect.colliderect(other_rect):
+                    # ESCAPABILITY CHECK: Allow the move if it increases distance to the obstacle
+                    curr_dx, curr_dy = self.x - other.x, self.y - other.y
+                    curr_dist_sq = curr_dx**2 + curr_dy**2
+                    
+                    # If we are moving 'away' (new dist > old dist), allow the move!
+                    if dist_sq > curr_dist_sq + 0.001:
+                        continue 
+                    
+                    return True # Move is blocked
             return False
 
         # Independent Axis Movement (Sliding)
@@ -441,13 +460,30 @@ class Robot:
         if not check_collision(self.x + field_vel_x * dt * speed_factor, self.y):
             self.x += field_vel_x * dt * speed_factor
         else:
+            self.field_vel_x = 0
             self.vel_x_robot = 0
             
         # Try Y
         if not check_collision(self.x, self.y + field_vel_y * dt * speed_factor):
             self.y += field_vel_y * dt * speed_factor
         else:
+            self.field_vel_y = 0
             self.vel_y_robot = 0
+
+        # 4. Separation Nudge (Prevents persistent overlap stickiness)
+        for other in robots:
+            if other == self: continue
+            dx, dy = self.x - other.x, self.y - other.y
+            dist_sq = dx**2 + dy**2
+            if dist_sq < 1.0 or dist_sq > 2500: continue # 50" broad-phase
+            
+            # Reuse the rotated AABB helper
+            rect = get_rotated_aabb(self, self.x, self.y)
+            other_rect = get_rotated_aabb(other, other.x, other.y)
+            if rect.colliderect(other_rect):
+                dist = dist_sq**0.5
+                self.x += (dx / dist) * 0.1 # Tiny nudge out
+                self.y += (dy / dist) * 0.1
             
         # Intake Side Determination
         if abs(self.vel_y_robot) > 10:

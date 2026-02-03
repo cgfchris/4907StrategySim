@@ -9,6 +9,7 @@ from robot import Robot
 from field import Field
 from game_piece import GamePieceManager
 from ai import RobotAI
+from camera import RobotCamera
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -56,6 +57,7 @@ def main():
     
     field = Field(config['field'])
     pieces = GamePieceManager(config, ppi)
+    camera = RobotCamera(400, 250)
     
     # Load Controls from Config
     def get_ctrl_mapping(alliance):
@@ -136,9 +138,52 @@ def main():
     auto_winner = None
     stage_alliances = ["red", "blue", "red", "blue"] # Default
     
+    
+    def rotate_routine(auto_data, field_w, field_h):
+        """Rotates an autonomous routine 180 degrees for the opposite alliance."""
+        # Create a deep copy to avoid modifying the original data if cached
+        import copy
+        data = copy.deepcopy(auto_data)
+        
+        # Rotate Header
+        if 'start_x' in data:
+            data['start_x'] = field_w - data['start_x']
+        if 'start_y' in data:
+            data['start_y'] = field_h - data['start_y']
+        
+        # Rotate Steps
+        for step in data.get('routine', []):
+            if 'target_x' in step:
+                step['target_x'] = field_w - step['target_x']
+            elif 'x' in step:
+                # If it's a timed/power step, flip the sign to maintain relative direction
+                step['x'] = -step['x']
+                
+            if 'target_y' in step:
+                step['target_y'] = field_h - step['target_y']
+            elif 'y' in step:
+                step['y'] = -step['y']
+            if 'rot' in step:
+                # If rot is a target angle (abs > 1.1), rotate it
+                if abs(step['rot']) > 1.1:
+                    step['rot'] = (step['rot'] + 180) % 360
+                # If it's power, it stays the same (relative) or should it flip?
+                # Usually power is robot-relative, so it works fine.
+            if 'pass_target_x' in step:
+                step['pass_target_x'] = field_w - step['pass_target_x']
+            if 'pass_target_y' in step:
+                step['pass_target_y'] = field_h - step['pass_target_y']
+        return data
+
     def init_match():
         nonlocal robots, robot_ais, scores, penalty_scores, game_time, auto_winner, stage_alliances
         load_config_files() # HOT RELOAD
+        
+        # Seed random if deterministic_mode is on
+        if config.get('physics', {}).get('deterministic_mode', False):
+            import random
+            random.seed(42)
+            
         robots = []
         robot_ais = {}
         scores = {"red": 0, "blue": 0}
@@ -184,6 +229,10 @@ def main():
                 try:
                     with open(auto_file, 'r') as f:
                         auto_data = json.load(f)
+                        # Check rotation flag for Blue
+                        if auto_data.get('rotate_for_blue', False):
+                            auto_data = rotate_routine(auto_data, field_width_in, field_height_in)
+                            
                         b_cfg['auto_routine'] = auto_data.get('routine', [])
                         sx = auto_data.get('start_x', sx)
                         sy = auto_data.get('start_y', sy)
@@ -218,7 +267,10 @@ def main():
     running = True
     while running:
         current_abs_time = time.time()
-        dt = min(0.1, current_abs_time - last_abs_time)
+        if config.get('physics', {}).get('deterministic_mode', False):
+            dt = 1.0 / 60.0
+        else:
+            dt = min(0.1, current_abs_time - last_abs_time)
         last_abs_time = current_abs_time
         
         for event in pygame.event.get():
@@ -270,6 +322,10 @@ def main():
                         for robot in robots:
                             if robot not in robot_ais:
                                 robot.is_field_oriented = not robot.is_field_oriented
+                    if event.key == pygame.K_c:
+                        camera.enabled = not camera.enabled
+                    if event.key == pygame.K_v:
+                        camera.target_robot_idx = (camera.target_robot_idx + 1) % len(robots)
         
         if sim_state == "PLAYING" and not paused:
             game_time += dt
@@ -366,6 +422,17 @@ def main():
                 robot.draw(field_surf, ppi, font)
             screen.blit(field_surf, (0, hud_height))
             
+            # Robot Camera (PiP)
+            if camera.enabled and len(robots) > camera.target_robot_idx:
+                target_robot = robots[camera.target_robot_idx]
+                cam_surf = camera.render(field, pieces, robots, target_robot)
+                # Position in bottom right corner of field view
+                screen.blit(cam_surf, (field_width - camera.width - 20, field_height + hud_height - camera.height - 20))
+                
+                # Label
+                label = font.render(f"CAM: {target_robot.alliance.upper()} {camera.target_robot_idx + 1}", True, (255, 255, 255))
+                screen.blit(label, (field_width - camera.width - 20, field_height + hud_height - camera.height - 45))
+            
             # HUD remains (only drawn in PLAYING state)
             hud_bg = pygame.Rect(0, 0, field_width, hud_height)
             pygame.draw.rect(screen, (40, 40, 40), hud_bg)
@@ -427,7 +494,7 @@ def main():
         screen.blit(font.render(tuning_text, True, (200, 200, 200)), (30, 68))
         
         # Controls (Moved to bottom)
-        controls_text = "See config.json | [BS]: Quick Restart | [ ] Tune | F: Field | R: Menu"
+        controls_text = "See config.json | [BS]: Quick Restart | [C]: Cam | [V]: View | [F]: Field | R: Menu"
         screen.blit(font.render(controls_text, True, (180, 180, 180)), (field_width - 550, 105))
         
         # AI Recovery Status

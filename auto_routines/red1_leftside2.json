@@ -1,19 +1,20 @@
 {
     "start_x": 175,
     "start_y": 20,
+    "rotate_for_blue": true,
     "routine": [
         {
             "t": 1.2,
             "shoot_state": true
         },
         {
-            "target_x": 300,
+            "target_x": 310,
             "target_y": 30,
             "rot": 90,
             "intake_state": true
         },
         {
-            "target_x": 310,
+            "target_x": 330,
             "target_y": 130,
             "rot": 90,
             "intake_state": true,
@@ -22,13 +23,13 @@
             "pass_target_y": 50
         },
         {
-            "t": 0.25,
+            "t": 0.1,
             "x": -1,
             "rot": 180,
             "intake_state": true,
             "pass_state": true,
             "pass_target_x": 120,
-            "pass_target_y": 50
+            "pass_target_y": 40
         },
         {
             "t": 0.1,
@@ -40,31 +41,15 @@
         },
         {
             "target_x": 310,
-            "target_y": 45,
+            "target_y": 35,
             "rot": -90,
             "pass_state": true,
             "pass_target_x": 120,
             "pass_target_y": 50
         },
         {
-            "target_x": 100,
+            "target_x": 40,
             "target_y": 30,
-            "rot": 90,
-            "pass_state": false,
-            "shoot_state": true,
-            "intake_state": true
-        },
-        {
-            "target_x": 100,
-            "target_y": 110,
-            "rot": 90,
-            "pass_state": false,
-            "shoot_state": true,
-            "intake_state": true
-        },
-        {
-            "target_x": 30,
-            "target_y": 110,
             "rot": 180,
             "pass_state": false,
             "shoot_state": true,
@@ -72,33 +57,35 @@
         },
         {
             "target_x": 30,
-            "target_y": 20,
-            "rot": -90,
-            "pass_state": false,
-            "shoot_state": true,
-            "intake_state": true
-        },
-        {
-            "target_x": 250,
-            "target_y": 50,
-            "rot": 90,
-            "pass_state": false,
-            "shoot_state": true,
-            "intake_state": true
-        },
-        {
-            "target_x": 250,
-            "target_y": 130,
-            "rot": 90,
-            "pass_state": false,
-            "shoot_state": true,
-            "intake_state": true
-        },
-        {
-            "target_x": 100,
             "target_y": 110,
             "rot": 90,
             "pass_state": false,
+            "shoot_state": true,
+            "intake_state": true
+        },
+        {
+            "target_x": 250,
+            "target_y": 120,
+            "rot": 0,
+            "pass_state": false,
+            "shoot_state": true,
+            "intake_state": true
+        },
+        {
+            "target_x": 250,
+            "target_y": 210,
+            "rot": 90,
+            "pass_state": true,
+            "shoot_state": true,
+            "intake_state": true,
+            "pass_target_x": 120,
+            "pass_target_y": 100
+        },
+        {
+            "target_x": 100,
+            "target_y": 210,
+            "rot": 180,
+            "pass_state": true,
             "shoot_state": true,
             "intake_state": true
         },

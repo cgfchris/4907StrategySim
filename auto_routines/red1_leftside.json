@@ -1,6 +1,7 @@
 {
     "start_x": 175,
     "start_y": 20,
+    "rotate_for_blue": true,
     "routine": [
         {
             "t": 1.2,
@@ -80,7 +81,7 @@
         },
         {
             "target_x": 250,
-            "target_y": 50,
+            "target_y": 40,
             "rot": 90,
             "pass_state": false,
             "shoot_state": true,

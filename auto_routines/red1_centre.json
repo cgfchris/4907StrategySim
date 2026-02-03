@@ -1,0 +1,91 @@
+{
+    "start_x": 175,
+    "start_y": 20,
+    "rotate_for_blue": true,
+    "routine": [
+        {
+            "t": 1.2,
+            "shoot_state": true
+        },
+        {
+            "target_x": 300,
+            "target_y": 30,
+            "rot": 90,
+            "intake_state": true
+        },
+        {
+            "target_x": 300,
+            "target_y": 180,
+            "rot": 90,
+            "intake_state": true,
+            "pass_state": true,
+            "pass_target_x": 120,
+            "pass_target_y": 50
+        },
+        {
+            "target_x": 300,
+            "target_y": 280,
+            "rot": 90,
+            "intake_state": true,
+            "pass_state": true,
+            "pass_target_x": 120,
+            "pass_target_y": 250
+        },
+        {
+            "target_x": 30,
+            "target_y": 300,
+            "rot": 180,
+            "intake_state": true,
+            "pass_state": false,
+            "shoot_state": true
+        },
+        {
+            "target_x": 30,
+            "target_y": 220,
+            "rot": -90,
+            "intake_state": true,
+            "pass_state": false,
+            "shoot_state": true
+        },
+        {
+            "target_x": 40,
+            "target_y": 290,
+            "rot": -90,
+            "intake_state": true,
+            "pass_state": false,
+            "shoot_state": true
+        },
+        {
+            "target_x": 80,
+            "target_y": 200,
+            "rot": -45,
+            "intake_state": true,
+            "pass_state": false,
+            "shoot_state": true
+        },
+        {
+            "target_x": 60,
+            "target_y": 150,
+            "rot": -90,
+            "intake_state": true,
+            "pass_state": false,
+            "shoot_state": true
+        },
+        {
+            "target_x": 20,
+            "target_y": 20,
+            "rot": -90,
+            "intake_state": true,
+            "pass_state": false,
+            "shoot_state": true
+        },
+        {
+            "target_x": 40,
+            "target_y": 130,
+            "rot": 90,
+            "intake_state": true,
+            "pass_state": false,
+            "shoot_state": true
+        }
+    ]
+}
